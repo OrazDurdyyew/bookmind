@@ -19,8 +19,20 @@ pub fn out_dir(root: &Path) -> PathBuf {
     root.join("eval/out")
 }
 
-pub fn run_dir(root: &Path, candidate: &str, embedder: &str) -> PathBuf {
-    out_dir(root).join(format!("{candidate}__{embedder}"))
+/// Папка прогона: `<кандидат>__<эмбеддер>__<режим>`, режим — gpu или cpu.
+pub fn run_dir(root: &Path, candidate: &str, embedder: &str, mode: &str) -> PathBuf {
+    out_dir(root).join(format!("{candidate}__{embedder}__{mode}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn run_dir_names_candidate_embedder_and_mode() {
+        let d = run_dir(Path::new("/p"), "qwen3-4b", "e5-small", "cpu");
+        assert_eq!(d, PathBuf::from("/p/eval/out/qwen3-4b__e5-small__cpu"));
+    }
 }
 
 /// llama-server: для видеокарты — сборка CUDA или Vulkan, если она скачана.

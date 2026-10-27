@@ -43,6 +43,12 @@ enum Cmd {
         /// Только проверить наборы вопросов.
         #[arg(long)]
         dry_run: bool,
+        /// Чат-модель на видеокарте (проверка качества).
+        #[arg(long)]
+        gpu: bool,
+        /// Не больше N вопросов на язык (замер скорости).
+        #[arg(long)]
+        limit: Option<usize>,
     },
     /// Оценить прогон моделью-судьёй.
     Judge {
@@ -60,8 +66,8 @@ fn parse_langs(s: &str) -> anyhow::Result<Vec<Lang>> {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     match Cli::parse().cmd {
-        Cmd::Run { candidate, embedder, langs, threads, quiz_per_book, dry_run } => {
-            run::run(run::RunArgs { candidate, embedder, langs: parse_langs(&langs)?, threads, quiz_per_book, dry_run }).await
+        Cmd::Run { candidate, embedder, langs, threads, quiz_per_book, dry_run, gpu, limit } => {
+            run::run(run::RunArgs { candidate, embedder, langs: parse_langs(&langs)?, threads, quiz_per_book, dry_run, gpu, limit }).await
         }
         Cmd::Judge { dir } => judge::judge(&dir).await,
         Cmd::Report => report::report(),

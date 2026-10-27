@@ -22,6 +22,10 @@ pub struct RunArgs {
     pub threads: u32,
     pub quiz_per_book: usize,
     pub dry_run: bool,
+    /// Запустить чат-модель на видеокарте (для проверки качества; скорость тогда не показательна).
+    pub gpu: bool,
+    /// Не больше стольких вопросов на язык (для короткого замера скорости).
+    pub limit: Option<usize>,
 }
 
 /// Книги набора без повторов, в порядке появления в вопросах.
@@ -65,7 +69,11 @@ async fn spawn_embed(root: &Path, e: &Embedder) -> anyhow::Result<LlamaServer> {
 pub async fn run(args: RunArgs) -> anyhow::Result<()> {
     let root = paths::root()?;
     let cfg = load_config(&root.join("eval/models.toml"))?;
-    let candidate = cfg.candidate(&args.candidate)?.clone();
+    let mut candidate = cfg.candidate(&args.candidate)?.clone();
+    if args.gpu {
+        candidate.gpu_layers = 99;
+    }
+    let mode = if candidate.gpu_layers > 0 { "gpu" } else { "cpu" };
     let embedder = cfg.embedder(&args.embedder)?.clone();
     let datasets: Vec<Dataset> = args
         .langs
@@ -80,7 +88,7 @@ pub async fn run(args: RunArgs) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let dir = paths::run_dir(&root, &candidate.model.name, &embedder.model.name);
+    let dir = paths::run_dir(&root, &candidate.model.name, &embedder.model.name, mode);
     std::fs::create_dir_all(&dir)?;
     let results = dir.join("results.jsonl");
     let done: HashSet<String> = read_jsonl::<Record>(&results)?.iter().map(Record::id).collect();
@@ -107,12 +115,13 @@ pub async fn run(args: RunArgs) -> anyhow::Result<()> {
         let books = store.books()?;
         let book_id = |name: &str| books.iter().find(|b| b.file_name == name).map(|b| b.id).unwrap();
 
-        for (i, q) in ds.questions.iter().enumerate() {
+        let questions = &ds.questions[..args.limit.unwrap_or(usize::MAX).min(ds.questions.len())];
+        for (i, q) in questions.iter().enumerate() {
             if done.contains(&q.id) {
                 continue;
             }
             let a = answer(&store, &llm, book_id(&q.book), &q.question, &[], &mut |_| {}).await?;
-            println!("  [{}/{}] {} found={} ttft={}ms", i + 1, ds.questions.len(), q.id, a.found, a.stats.ttft_ms);
+            println!("  [{}/{}] {} found={} ttft={}ms", i + 1, questions.len(), q.id, a.found, a.stats.ttft_ms);
             append_jsonl(&results, &Record::Answer(AnswerResult {
                 id: q.id.clone(),
                 lang: ds.lang,
