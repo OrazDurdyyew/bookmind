@@ -1,0 +1,99 @@
+# Модели для проверки качества. URL проверены на Hugging Face 2026-10-27.
+# gpu_layers = 0 — только процессор (так меряем скорость «Стандарт»-ПК).
+# Модели Pro и судья идут на видеокарте: на машине разработки 9 ГБ ОЗУ.
+
+[[candidates]]
+name = "qwen3-1.7b"
+url = "https://huggingface.co/unsloth/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf"
+file = "Qwen3-1.7B-Q4_K_M.gguf"
+tier_hint = "lite"
+ctx_size = 8192
+gpu_layers = 0
+
+[[candidates]]
+name = "qwen3-4b"
+url = "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf"
+file = "Qwen3-4B-Q4_K_M.gguf"
+tier_hint = "standard"
+ctx_size = 8192
+gpu_layers = 0
+
+[[candidates]]
+name = "qwen3.5-4b"
+url = "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf"
+file = "Qwen3.5-4B-Q4_K_M.gguf"
+tier_hint = "standard"
+ctx_size = 8192
+gpu_layers = 0
+
+[[candidates]]
+name = "gemma-3-4b"
+url = "https://huggingface.co/unsloth/gemma-3-4b-it-GGUF/resolve/main/gemma-3-4b-it-Q4_K_M.gguf"
+file = "gemma-3-4b-it-Q4_K_M.gguf"
+tier_hint = "standard"
+ctx_size = 8192
+gpu_layers = 0
+
+[[candidates]]
+name = "phi-4-mini"
+url = "https://huggingface.co/unsloth/Phi-4-mini-instruct-GGUF/resolve/main/Phi-4-mini-instruct-Q4_K_M.gguf"
+file = "Phi-4-mini-instruct-Q4_K_M.gguf"
+tier_hint = "standard"
+ctx_size = 8192
+gpu_layers = 0
+
+[[candidates]]
+name = "gemma-4-e4b"
+url = "https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-IQ4_XS.gguf"
+file = "gemma-4-E4B-it-IQ4_XS.gguf"
+tier_hint = "pro"
+ctx_size = 8192
+gpu_layers = 99
+
+[[candidates]]
+name = "qwen3-8b"
+url = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q4_K_M.gguf"
+file = "Qwen3-8B-Q4_K_M.gguf"
+tier_hint = "pro"
+ctx_size = 8192
+gpu_layers = 99
+
+[[candidates]]
+name = "qwen3.5-9b"
+url = "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q4_K_M.gguf"
+file = "Qwen3.5-9B-Q4_K_M.gguf"
+tier_hint = "pro"
+ctx_size = 8192
+gpu_layers = 99
+
+[[embedders]]
+name = "e5-small"
+url = "https://huggingface.co/cstr/multilingual-e5-small-GGUF/resolve/main/multilingual-e5-small-q8_0.gguf"
+file = "multilingual-e5-small-q8_0.gguf"
+pooling = "mean"
+query_prefix = "query: "
+passage_prefix = "passage: "
+
+[[embedders]]
+name = "e5-base"
+url = "https://huggingface.co/dinab/multilingual-e5-base-Q4_K_M-GGUF/resolve/main/multilingual-e5-base-q4_k_m.gguf"
+file = "multilingual-e5-base-q4_k_m.gguf"
+pooling = "mean"
+query_prefix = "query: "
+passage_prefix = "passage: "
+
+[[embedders]]
+name = "bge-m3"
+url = "https://huggingface.co/ggml-org/bge-m3-Q8_0-GGUF/resolve/main/bge-m3-q8_0.gguf"
+file = "bge-m3-q8_0.gguf"
+pooling = "cls"
+query_prefix = ""
+passage_prefix = ""
+
+[judge]
+name = "qwen3-8b"
+url = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q4_K_M.gguf"
+file = "Qwen3-8B-Q4_K_M.gguf"
+tier_hint = "judge"
+ctx_size = 8192
+gpu_layers = 99
