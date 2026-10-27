@@ -89,10 +89,21 @@ pub fn parse_sse_line(line: &str) -> Option<SseEvent> {
 /// 300 слов — с запасом; длиннее текст обрезаем, иначе сервер вернёт ошибку.
 pub const MAX_EMBED_WORDS: usize = 300;
 
-/// Текст для эмбеддинга: префикс модели + не больше MAX_EMBED_WORDS слов.
+/// И не больше стольких символов: в тексте с формулами и номерами
+/// («=221.=—CO₂») на одно слово приходится много токенов.
+pub const MAX_EMBED_CHARS: usize = 1500;
+
+/// Текст для эмбеддинга: префикс модели + не больше MAX_EMBED_WORDS слов
+/// и MAX_EMBED_CHARS символов.
 pub fn embed_input(prefix: &str, text: &str) -> String {
     let words: Vec<&str> = text.split_whitespace().take(MAX_EMBED_WORDS).collect();
-    format!("{prefix}{}", words.join(" "))
+    format!("{prefix}{}", words.join(" ")).chars().take(MAX_EMBED_CHARS).collect()
+}
+
+/// Первая половина слов текста (минимум одно слово).
+pub fn halve_words(text: &str) -> String {
+    let words: Vec<&str> = text.split_whitespace().collect();
+    words[..(words.len() / 2).max(1).min(words.len())].join(" ")
 }
 
 /// Префиксы для эмбеддингов: у e5 «query: »/«passage: », у bge-m3 пусто.
@@ -132,22 +143,15 @@ impl LlamaHttp {
     }
 }
 
-impl Llm for LlamaHttp {
-    async fn embed(&self, kind: EmbedKind, texts: &[String]) -> anyhow::Result<Vec<Vec<f32>>> {
-        let prefix = match kind {
-            EmbedKind::Query => &self.prefixes.query,
-            EmbedKind::Passage => &self.prefixes.passage,
-        };
-        let input: Vec<String> = texts.iter().map(|t| embed_input(prefix, t)).collect();
-        let resp: serde_json::Value = self
-            .http
-            .post(format!("{}/v1/embeddings", self.embed_base))
-            .json(&serde_json::json!({ "input": input }))
-            .send()
-            .await?
-            .error_for_status()?
-            .json()
-            .await?;
+impl LlamaHttp {
+    /// Один запрос /v1/embeddings. Текст ошибки сервера попадает в сообщение.
+    async fn post_embeddings(&self, input: &[String]) -> anyhow::Result<Vec<Vec<f32>>> {
+        let resp = self.http.post(format!("{}/v1/embeddings", self.embed_base)).json(&serde_json::json!({ "input": input })).send().await?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            anyhow::bail!("эмбеддинги: {status}: {}", resp.text().await.unwrap_or_default());
+        }
+        let resp: serde_json::Value = resp.json().await?;
         let mut items: Vec<(u64, Vec<f32>)> = resp["data"]
             .as_array()
             .ok_or_else(|| anyhow::anyhow!("нет data в ответе эмбеддингов"))?
@@ -158,10 +162,46 @@ impl Llm for LlamaHttp {
             })
             .collect();
         items.sort_by_key(|(i, _)| *i);
-        let mut out: Vec<Vec<f32>> = items.into_iter().map(|(_, v)| v).collect();
-        if out.len() != texts.len() {
-            anyhow::bail!("ожидалось {} эмбеддингов, получено {}", texts.len(), out.len());
+        if items.len() != input.len() {
+            anyhow::bail!("ожидалось {} эмбеддингов, получено {}", input.len(), items.len());
         }
+        Ok(items.into_iter().map(|(_, v)| v).collect())
+    }
+}
+
+impl Llm for LlamaHttp {
+    async fn embed(&self, kind: EmbedKind, texts: &[String]) -> anyhow::Result<Vec<Vec<f32>>> {
+        let prefix = match kind {
+            EmbedKind::Query => &self.prefixes.query,
+            EmbedKind::Passage => &self.prefixes.passage,
+        };
+        let input: Vec<String> = texts.iter().map(|t| embed_input(prefix, t)).collect();
+        let mut out = match self.post_embeddings(&input).await {
+            Ok(v) => v,
+            // Какой-то текст всё же длиннее 512 токенов: по одному, укорачивая вдвое.
+            Err(e) if e.to_string().contains("too large") => {
+                let mut all = Vec::with_capacity(input.len());
+                for text in &input {
+                    let mut t = text.clone();
+                    let mut attempt = 0;
+                    loop {
+                        match self.post_embeddings(std::slice::from_ref(&t)).await {
+                            Ok(mut v) => {
+                                all.push(v.remove(0));
+                                break;
+                            }
+                            Err(e) if e.to_string().contains("too large") && attempt < 4 => {
+                                t = halve_words(&t);
+                                attempt += 1;
+                            }
+                            Err(e) => return Err(e),
+                        }
+                    }
+                }
+                all
+            }
+            Err(e) => return Err(e),
+        };
         out.iter_mut().for_each(|v| normalize(v));
         Ok(out)
     }
@@ -257,6 +297,15 @@ mod tests {
         let out = embed_input("passage: ", &long);
         assert_eq!(out.split_whitespace().count(), MAX_EMBED_WORDS + 1); // + слово префикса
         assert!(out.starts_with("passage: w0 "));
+        // Длинные «слова» (формулы, номера) ограничены ещё и по символам.
+        let dense = "=221.=—CO₂ ".repeat(400);
+        assert!(embed_input("", &dense).chars().count() <= MAX_EMBED_CHARS);
+    }
+
+    #[test]
+    fn halve_words_shrinks_text() {
+        assert_eq!(halve_words("a b c d e"), "a b");
+        assert_eq!(halve_words("one"), "one");
     }
 
     #[test]
