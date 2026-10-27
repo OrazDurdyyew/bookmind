@@ -5,3 +5,4 @@ tools/pdfium/
 eval/out/
 .superpowers/
 eval/out-*/
+eval/datasets/tm/books/
