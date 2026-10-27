@@ -1,0 +1,25 @@
+{"id": "ru-001", "book": "detstvo.pdf", "question": "Сколько лет исполнилось рассказчику в начале повести?", "answerable": true, "expected": "Десять лет", "expected_pages": ["6"]}
+{"id": "ru-002", "book": "detstvo.pdf", "question": "Какого числа Карл Иваныч разбудил рассказчика?", "answerable": true, "expected": "12 августа", "expected_pages": ["6"]}
+{"id": "ru-003", "book": "detstvo.pdf", "question": "В котором часу утра Карл Иваныч разбудил мальчика?", "answerable": true, "expected": "В 7 часов утра", "expected_pages": ["6"]}
+{"id": "ru-004", "book": "detstvo.pdf", "question": "Чем Карл Иваныч бил мух?", "answerable": true, "expected": "Хлопушкой из сахарной бумаги на палке", "expected_pages": ["6"]}
+{"id": "ru-005", "book": "detstvo.pdf", "question": "Что упало мальчику на голову, когда Карл Иваныч бил мух?", "answerable": true, "expected": "Убитая муха", "expected_pages": ["6"]}
+{"id": "ru-006", "book": "detstvo.pdf", "question": "На каком языке Карл Иваныч будил детей?", "answerable": true, "expected": "По-немецки", "expected_pages": ["6"]}
+{"id": "ru-007", "book": "detstvo.pdf", "question": "Какой сон, по словам мальчика, ему приснился?", "answerable": true, "expected": "Будто maman умерла и её несут хоронить (он это выдумал)", "expected_pages": ["7"]}
+{"id": "ru-008", "book": "detstvo.pdf", "question": "Что делала матушка в гостиной, когда вошли дети?", "answerable": true, "expected": "Разливала чай из самовара", "expected_pages": ["12"]}
+{"id": "ru-009", "book": "detstvo.pdf", "question": "Какого цвета были глаза матушки?", "answerable": true, "expected": "Карие", "expected_pages": ["12"]}
+{"id": "ru-010", "book": "detstvo.pdf", "question": "Сколько лет было Любочке?", "answerable": true, "expected": "Одиннадцать лет", "expected_pages": ["12"]}
+{"id": "ru-011", "book": "detstvo.pdf", "question": "Что играла Любочка на рояле?", "answerable": true, "expected": "Этюды Клементи (Clementi)", "expected_pages": ["12"]}
+{"id": "ru-012", "book": "detstvo.pdf", "question": "Почему Карл Иваныч никогда не снимал красную шапочку?", "answerable": true, "expected": "Чтобы не простудить голую (лысую) голову", "expected_pages": ["13"]}
+{"id": "ru-013", "book": "detstvo.pdf", "question": "Как звали матушку по имени и отчеству?", "answerable": true, "expected": "Наталья Николаевна", "expected_pages": ["13"]}
+{"id": "ru-014", "book": "detstvo.pdf", "question": "Почему Карл Иваныч не расслышал вопрос матушки?", "answerable": true, "expected": "Он был глух на одно ухо, а за роялем было шумно", "expected_pages": ["13"]}
+{"id": "ru-015", "book": "otrochestvo.epub", "question": "Сколько экипажей подали к крыльцу петровского дома?", "answerable": true, "expected": "Два: карета и бричка", "expected_pages": []}
+{"id": "ru-016", "book": "otrochestvo.epub", "question": "С кем рассказчик едет в бричке?", "answerable": true, "expected": "С Володей и лакеем Василием", "expected_pages": []}
+{"id": "ru-017", "book": "otrochestvo.epub", "question": "Куда едет семья?", "answerable": true, "expected": "В Москву", "expected_pages": []}
+{"id": "ru-018", "book": "otrochestvo.epub", "question": "Сколько дней длилось путешествие, которое рассказчик вспоминает как приятное?", "answerable": true, "expected": "Четыре дня", "expected_pages": []}
+{"id": "ru-019", "book": "otrochestvo.epub", "question": "Кто рано утром сдёргивал с мальчиков одеяло?", "answerable": true, "expected": "Лакей Василий", "expected_pages": []}
+{"id": "ru-020", "book": "otrochestvo.epub", "question": "Что делал Филипп во дворе утром?", "answerable": true, "expected": "Вытягивал бадью с водой из колодца и выливал воду в колоду", "expected_pages": []}
+{"id": "ru-021", "book": "detstvo.pdf", "question": "В какой гимназии учился Володя?", "answerable": false}
+{"id": "ru-022", "book": "detstvo.pdf", "question": "Какой экзамен сдавал Николенька и какую оценку получил?", "answerable": false}
+{"id": "ru-023", "book": "detstvo.pdf", "question": "Кто изобрёл самовар, стоявший в гостиной?", "answerable": false}
+{"id": "ru-024", "book": "otrochestvo.epub", "question": "В какой гимназии учились братья в Москве?", "answerable": false}
+{"id": "ru-025", "book": "otrochestvo.epub", "question": "Сколько учеников было в классе Николеньки в гимназии?", "answerable": false}

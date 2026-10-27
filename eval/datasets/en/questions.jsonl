@@ -1,0 +1,26 @@
+{"id": "en-001", "book": "physiology.epub", "question": "What is the study of the various parts of the body and how they are put together called?", "answerable": true, "expected": "Anatomy", "expected_pages": []}
+{"id": "en-002", "book": "physiology.epub", "question": "What does physiology study?", "answerable": true, "expected": "What each part of the body does", "expected_pages": []}
+{"id": "en-003", "book": "physiology.epub", "question": "What is hygiene?", "answerable": true, "expected": "The study of how to take care of the body", "expected_pages": []}
+{"id": "en-004", "book": "physiology.epub", "question": "What is an organ?", "answerable": true, "expected": "A part of the body made to do some special kind of work", "expected_pages": []}
+{"id": "en-005", "book": "physiology.epub", "question": "To which two things does the book compare the human body?", "answerable": true, "expected": "A house and a machine", "expected_pages": []}
+{"id": "en-006", "book": "physiology.epub", "question": "Which kind of animal food is most likely to be diseased?", "answerable": true, "expected": "Pork", "expected_pages": []}
+{"id": "en-007", "book": "physiology.epub", "question": "Which foods are most likely to be adulterated?", "answerable": true, "expected": "Milk, sugar and butter", "expected_pages": []}
+{"id": "en-008", "book": "physiology.epub", "question": "How is milk most often adulterated?", "answerable": true, "expected": "By adding water", "expected_pages": []}
+{"id": "en-009", "book": "physiology.epub", "question": "What is false butter made almost wholly from lard or tallow called?", "answerable": true, "expected": "Oleomargarine or butterine", "expected_pages": []}
+{"id": "en-010", "book": "physiology.epub", "question": "What poison does tobacco contain?", "answerable": true, "expected": "Nicotine", "expected_pages": []}
+{"id": "en-011", "book": "physiology.epub", "question": "Why are condiments not foods?", "answerable": true, "expected": "They do not nourish the body", "expected_pages": []}
+{"id": "en-012", "book": "physiology.epub", "question": "When should canned fish be eaten after the can is opened?", "answerable": true, "expected": "The same day", "expected_pages": []}
+{"id": "en-013", "book": "physiology.epub", "question": "What happened to the monkey that swallowed a piece of tobacco?", "answerable": true, "expected": "It became sick and died", "expected_pages": []}
+{"id": "en-014", "book": "botany.pdf", "question": "What precipitate shows the presence of carbon dioxide when baryta water is poured into the bottle with germinating peas?", "answerable": true, "expected": "Barium carbonate", "expected_pages": ["149"]}
+{"id": "en-015", "book": "botany.pdf", "question": "What happens to a lighted taper lowered into the bottle with germinating peas?", "answerable": true, "expected": "It is extinguished because of the carbon dioxide", "expected_pages": ["149"]}
+{"id": "en-016", "book": "botany.pdf", "question": "What is respiration in animals, according to the book?", "answerable": true, "expected": "The process by which oxygen is taken into the body and carbon dioxide is given off", "expected_pages": ["149"]}
+{"id": "en-017", "book": "botany.pdf", "question": "What rises in the thistle tube in the experiment with germinating wheat?", "answerable": true, "expected": "The (red-coloured) caustic potash solution", "expected_pages": ["150"]}
+{"id": "en-018", "book": "botany.pdf", "question": "Why does the caustic potash solution rise in the tube?", "answerable": true, "expected": "Part of the air (oxygen) is used up by the germinating wheat and the carbon dioxide is absorbed", "expected_pages": ["150"]}
+{"id": "en-019", "book": "botany.pdf", "question": "Is respiration with access of oxygen necessary for growth?", "answerable": true, "expected": "Yes, without oxygen the roots grow very little or not at all", "expected_pages": ["151", "152"]}
+{"id": "en-020", "book": "botany.pdf", "question": "What is anaerobic respiration?", "answerable": true, "expected": "Evolution of carbon dioxide by living plants when there is no access of oxygen", "expected_pages": ["152"]}
+{"id": "en-021", "book": "botany.pdf", "question": "In which plant does anaerobic respiration occur especially markedly?", "answerable": true, "expected": "The yeast plant (and oily seeds)", "expected_pages": ["152"]}
+{"id": "en-022", "book": "physiology.epub", "question": "Which vitamins does the body need to stay healthy?", "answerable": false}
+{"id": "en-023", "book": "physiology.epub", "question": "What should a person's normal blood pressure be?", "answerable": false}
+{"id": "en-024", "book": "physiology.epub", "question": "How many calories should a child eat each day?", "answerable": false}
+{"id": "en-025", "book": "botany.pdf", "question": "Which vitamins do germinating peas produce?", "answerable": false}
+{"id": "en-026", "book": "botany.pdf", "question": "How are X-rays used to study plant roots?", "answerable": false}
