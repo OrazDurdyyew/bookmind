@@ -60,3 +60,64 @@ pub fn make_docx(dir: &Path, title: Option<&str>, paras: &[(&str, &str)]) -> Pat
     write_zip(&path, &files);
     path
 }
+
+/// Один XHTML-документ книги EPUB. `toc_title: None` — документ не в оглавлении.
+pub struct EpubDoc<'a> {
+    pub toc_title: Option<&'a str>,
+    pub body: &'a str,
+}
+
+/// Создаёт EPUB 3 (nav.xhtml + toc.ncx) с главами (название, тело xhtml).
+pub fn make_epub(dir: &Path, title: &str, chapters: &[(&str, &str)]) -> PathBuf {
+    let docs: Vec<EpubDoc> = chapters.iter().map(|(t, b)| EpubDoc { toc_title: Some(t), body: b }).collect();
+    make_epub_with(dir, title, &docs, true)
+}
+
+/// Полный вариант: `epub3 = false` — только toc.ncx (EPUB 2).
+pub fn make_epub_with(dir: &Path, title: &str, docs: &[EpubDoc], epub3: bool) -> PathBuf {
+    let mut files: Vec<(String, String)> = vec![
+        ("mimetype".into(), "application/epub+zip".into()),
+        (
+            "META-INF/container.xml".into(),
+            r#"<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>"#.into(),
+        ),
+    ];
+    let mut manifest = String::new();
+    let mut spine = String::new();
+    let mut nav_items = String::new();
+    let mut ncx_points = String::new();
+    for (i, d) in docs.iter().enumerate() {
+        let name = format!("text/ch{i}.xhtml");
+        files.push((
+            format!("OEBPS/{name}"),
+            format!(r#"<?xml version="1.0" encoding="UTF-8"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>x</title><style>p {{}}</style></head><body>{}</body></html>"#, d.body),
+        ));
+        manifest.push_str(&format!(r#"<item id="c{i}" href="{name}" media-type="application/xhtml+xml"/>"#));
+        spine.push_str(&format!(r#"<itemref idref="c{i}"/>"#));
+        if let Some(t) = d.toc_title {
+            nav_items.push_str(&format!(r#"<li><a href="{name}#start">{t}</a></li>"#));
+            ncx_points.push_str(&format!(r#"<navPoint id="n{i}"><navLabel><text>{t}</text></navLabel><content src="{name}"/></navPoint>"#));
+        }
+    }
+    if epub3 {
+        files.push((
+            "OEBPS/nav.xhtml".into(),
+            format!(r#"<?xml version="1.0" encoding="UTF-8"?><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><body><nav epub:type="toc"><ol>{nav_items}</ol></nav></body></html>"#),
+        ));
+        manifest.push_str(r#"<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>"#);
+    }
+    files.push((
+        "OEBPS/toc.ncx".into(),
+        format!(r#"<?xml version="1.0" encoding="UTF-8"?><ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1"><navMap>{ncx_points}</navMap></ncx>"#),
+    ));
+    manifest.push_str(r#"<item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>"#);
+    let version = if epub3 { "3.0" } else { "2.0" };
+    files.push((
+        "OEBPS/content.opf".into(),
+        format!(r#"<?xml version="1.0" encoding="UTF-8"?><package xmlns="http://www.idpf.org/2007/opf" version="{version}"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>{title}</dc:title></metadata><manifest>{manifest}</manifest><spine toc="ncx">{spine}</spine></package>"#),
+    ));
+    let refs: Vec<(&str, String)> = files.iter().map(|(n, c)| (n.as_str(), c.clone())).collect();
+    let path = dir.join("book.epub");
+    write_zip(&path, &refs);
+    path
+}
