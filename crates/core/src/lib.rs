@@ -9,6 +9,7 @@ pub mod ingest;
 pub mod lang;
 pub mod llm;
 pub mod model;
+pub mod quiz;
 pub mod retrieve;
 pub mod server;
 pub mod store;
