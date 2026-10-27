@@ -120,7 +120,13 @@ pub async fn run(args: RunArgs) -> anyhow::Result<()> {
             if done.contains(&q.id) {
                 continue;
             }
-            let a = answer(&store, &llm, book_id(&q.book), &q.question, &[], &mut |_| {}).await?;
+            let a = match answer(&store, &llm, book_id(&q.book), &q.question, &[], &mut |_| {}).await {
+                Ok(a) => a,
+                Err(e) => {
+                    eprintln!("ошибка на {}: {e}\nжурнал чат-сервера:\n{}", q.id, chat.stderr_tail().join("\n"));
+                    return Err(e);
+                }
+            };
             println!("  [{}/{}] {} found={} ttft={}ms", i + 1, questions.len(), q.id, a.found, a.stats.ttft_ms);
             append_jsonl(&results, &Record::Answer(AnswerResult {
                 id: q.id.clone(),

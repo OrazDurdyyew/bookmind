@@ -35,6 +35,7 @@ pub struct ServerConfig {
 pub struct LlamaServer {
     _child: Child,
     port: u16,
+    tail: Arc<Mutex<VecDeque<String>>>,
 }
 
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(120);
@@ -96,7 +97,7 @@ impl LlamaServer {
             }
             if let Ok(r) = http.get(&url).send().await {
                 if r.status().is_success() {
-                    return Ok(LlamaServer { _child: child, port: cfg.port });
+                    return Ok(LlamaServer { _child: child, port: cfg.port, tail });
                 }
             }
             if started.elapsed() > HEALTH_TIMEOUT {
@@ -104,6 +105,11 @@ impl LlamaServer {
             }
             tokio::time::sleep(Duration::from_millis(250)).await;
         }
+    }
+
+    /// Последние строки журнала сервера — чтобы понять, почему он упал.
+    pub fn stderr_tail(&self) -> Vec<String> {
+        self.tail.lock().unwrap().iter().cloned().collect()
     }
 
     pub fn base_url(&self) -> String {

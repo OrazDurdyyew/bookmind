@@ -127,7 +127,9 @@ impl LlamaHttp {
             chat_base: chat_base.trim_end_matches('/').to_string(),
             embed_base: embed_base.trim_end_matches('/').to_string(),
             prefixes,
-            http: reqwest::Client::new(),
+            // Без пула соединений: llama-server закрывает простаивающие keep-alive
+            // соединения, и повторное использование давало «connection closed».
+            http: reqwest::Client::builder().pool_max_idle_per_host(0).build().expect("reqwest client"),
         }
     }
 
