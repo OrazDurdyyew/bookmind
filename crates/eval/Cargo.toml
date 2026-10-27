@@ -1,0 +1,7 @@
+[package]
+name = "bookmind-eval"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+bookmind-core = { path = "../core" }

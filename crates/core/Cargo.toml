@@ -1,0 +1,10 @@
+[package]
+name = "bookmind-core"
+edition.workspace = true
+version.workspace = true
+
+[features]
+# Включает FakeLlm для тестов в других крейтах.
+fake = []
+
+[dependencies]
