@@ -16,6 +16,14 @@ fn dir_of(path: &str) -> &str {
     path.rfind('/').map(|i| &path[..i]).unwrap_or("")
 }
 
+/// Ссылка из оглавления: файл и необязательный якорь (#id).
+fn split_href(base_dir: &str, href: &str) -> (String, Option<String>) {
+    let mut it = href.splitn(2, '#');
+    let file = resolve(base_dir, it.next().unwrap_or(""));
+    let frag = it.next().filter(|f| !f.is_empty()).map(String::from);
+    (file, frag)
+}
+
 /// Склеивает относительную ссылку с папкой и убирает "./" и "../".
 fn resolve(base_dir: &str, href: &str) -> String {
     let href = href.split('#').next().unwrap_or("").replace("%20", " ");
@@ -85,8 +93,33 @@ fn parse_opf(xml: &str, opf_dir: &str) -> Opf {
     Opf { title: (!title.is_empty()).then_some(title), spine, nav, ncx }
 }
 
-/// Пункты оглавления верхнего уровня из nav.xhtml: (название, файл).
-fn parse_nav(xml: &str, nav_dir: &str) -> Vec<(String, String)> {
+/// Пункт оглавления: название, файл и якорь внутри файла.
+struct TocEntry {
+    title: String,
+    file: String,
+    anchor: Option<String>,
+    /// Уровень вложенности: 1 — верхний.
+    depth: usize,
+}
+
+fn toc_entry(title: &str, base_dir: &str, href: &str, depth: usize) -> TocEntry {
+    let (file, anchor) = split_href(base_dir, href);
+    TocEntry { title: collapse_ws(title), file, anchor, depth }
+}
+
+/// Самый мелкий уровень оглавления, на котором не меньше 3 пунктов, — уровень глав.
+/// Так книга, где все главы вложены в один пункт «Книга», всё равно делится на главы.
+/// Если такого уровня нет (короткое оглавление), берём только верхний уровень.
+fn chapter_level(mut toc: Vec<TocEntry>) -> Vec<TocEntry> {
+    const MIN_ENTRIES: usize = 3;
+    const MAX_DEPTH: usize = 3;
+    let level = (1..=MAX_DEPTH).find(|l| toc.iter().filter(|e| e.depth == *l).count() >= MIN_ENTRIES).unwrap_or(1);
+    toc.retain(|e| e.depth <= level);
+    toc
+}
+
+/// Все пункты оглавления из nav.xhtml (с уровнем вложенности).
+fn parse_nav(xml: &str, nav_dir: &str) -> Vec<TocEntry> {
     let mut out = Vec::new();
     let mut in_toc = false;
     let mut ol_depth = 0;
@@ -97,7 +130,7 @@ fn parse_nav(xml: &str, nav_dir: &str) -> Vec<(String, String)> {
             Ok(Event::Start(e)) => match e.local_name().into_inner() {
                 "nav" if attr(&e, "type").is_some_and(|t| t.contains("toc")) => in_toc = true,
                 "ol" if in_toc => ol_depth += 1,
-                "a" if in_toc && ol_depth == 1 => current = Some((attr(&e, "href").unwrap_or_default(), String::new())),
+                "a" if in_toc => current = Some((attr(&e, "href").unwrap_or_default(), String::new())),
                 _ => {}
             },
             Ok(Event::End(e)) => match e.local_name().into_inner() {
@@ -105,7 +138,7 @@ fn parse_nav(xml: &str, nav_dir: &str) -> Vec<(String, String)> {
                 "ol" if in_toc => ol_depth -= 1,
                 "a" => {
                     if let Some((href, text)) = current.take() {
-                        out.push((collapse_ws(&text), resolve(nav_dir, &href)));
+                        out.push(toc_entry(&text, nav_dir, &href, ol_depth));
                     }
                 }
                 _ => {}
@@ -121,8 +154,8 @@ fn parse_nav(xml: &str, nav_dir: &str) -> Vec<(String, String)> {
     out
 }
 
-/// Пункты верхнего уровня из toc.ncx: (название, файл).
-fn parse_ncx(xml: &str, ncx_dir: &str) -> Vec<(String, String)> {
+/// Все пункты из toc.ncx (с уровнем вложенности).
+fn parse_ncx(xml: &str, ncx_dir: &str) -> Vec<TocEntry> {
     let mut out = Vec::new();
     let mut depth = 0;
     let mut in_text = false;
@@ -133,15 +166,13 @@ fn parse_ncx(xml: &str, ncx_dir: &str) -> Vec<(String, String)> {
             Ok(Event::Start(e)) => match e.local_name().into_inner() {
                 "navPoint" => {
                     depth += 1;
-                    if depth == 1 {
-                        label.clear();
-                    }
+                    label.clear();
                 }
-                "text" if depth == 1 => in_text = true,
+                "text" => in_text = true,
                 _ => {}
             },
-            Ok(Event::Empty(e)) if e.local_name().into_inner() == "content" && depth == 1 => {
-                out.push((collapse_ws(&label), resolve(ncx_dir, &attr(&e, "src").unwrap_or_default())));
+            Ok(Event::Empty(e)) if e.local_name().into_inner() == "content" && depth > 0 => {
+                out.push(toc_entry(&label, ncx_dir, &attr(&e, "src").unwrap_or_default(), depth));
             }
             Ok(Event::End(e)) => match e.local_name().into_inner() {
                 "navPoint" => depth -= 1,
@@ -164,35 +195,50 @@ fn parse_ncx(xml: &str, ncx_dir: &str) -> Vec<(String, String)> {
 enum Piece {
     Text(String),
     Heading(String),
+    /// Элемент с id, на который ссылается оглавление, — здесь начинается глава.
+    Anchor(String),
+}
+
+/// Закрывает накопленный текст: абзац, подзаголовок или (для h1) ничего.
+fn flush(text: &mut String, heading: Option<u8>, out: &mut Vec<Piece>) {
+    let t = collapse_ws(text);
+    text.clear();
+    if t.is_empty() {
+        return;
+    }
+    match heading {
+        Some(1) => {}
+        Some(_) => out.push(Piece::Heading(t)),
+        None => out.push(Piece::Text(t)),
+    }
+}
+
+/// Если у элемента id, на который ссылается оглавление, — отмечаем начало главы.
+/// Текст до якоря относится к предыдущей главе, поэтому сначала закрываем его.
+fn push_anchor(e: &quick_xml::events::BytesStart, anchors: &[&str], text: &mut String, heading: Option<u8>, out: &mut Vec<Piece>) {
+    if let Some(id) = attr(e, "id").filter(|id| anchors.contains(&id.as_str())) {
+        flush(text, heading, out);
+        out.push(Piece::Anchor(id));
+    }
 }
 
 const BLOCK_TAGS: &[&str] = &["p", "li", "div", "blockquote", "td", "dd", "dt", "pre", "h1", "h2", "h3", "h4", "h5", "h6"];
 
 /// Разбирает XHTML на абзацы и подзаголовки. h1 пропускается:
 /// обычно он повторяет название главы из оглавления.
-fn parse_xhtml(xml: &str) -> Vec<Piece> {
+fn parse_xhtml(xml: &str, anchors: &[&str]) -> Vec<Piece> {
     let mut out = Vec::new();
     let mut text = String::new();
     let mut skip = 0; // внутри head/script/style
     let mut heading: Option<u8> = None;
     let mut r = reader(xml);
 
-    let flush = |text: &mut String, heading: Option<u8>, out: &mut Vec<Piece>| {
-        let t = collapse_ws(text);
-        text.clear();
-        if t.is_empty() {
-            return;
-        }
-        match heading {
-            Some(1) => {}
-            Some(_) => out.push(Piece::Heading(t)),
-            None => out.push(Piece::Text(t)),
-        }
-    };
-
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => {
+                if skip == 0 {
+                    push_anchor(&e, anchors, &mut text, heading, &mut out);
+                }
                 let name = e.local_name().into_inner().to_string();
                 if matches!(name.as_str(), "head" | "script" | "style") {
                     skip += 1;
@@ -203,7 +249,14 @@ fn parse_xhtml(xml: &str) -> Vec<Piece> {
                     }
                 }
             }
-            Ok(Event::Empty(e)) if e.local_name().into_inner() == "br" => text.push(' '),
+            Ok(Event::Empty(e)) => {
+                if skip == 0 {
+                    push_anchor(&e, anchors, &mut text, heading, &mut out);
+                }
+                if e.local_name().into_inner() == "br" {
+                    text.push(' ');
+                }
+            }
             Ok(Event::End(e)) => {
                 let name = e.local_name().into_inner().to_string();
                 if matches!(name.as_str(), "head" | "script" | "style") {
@@ -266,34 +319,37 @@ pub fn extract_epub(path: &Path) -> Result<ExtractedBook, ExtractError> {
             .unwrap_or_default();
     }
 
-    // Начало каждой главы — позиция её файла в spine.
-    let mut starts: Vec<(usize, String)> = Vec::new();
-    for (title, file) in toc {
-        if let Some(i) = opf.spine.iter().position(|s| *s == file) {
-            if !starts.iter().any(|(j, _)| *j == i) {
-                starts.push((i, title));
-            }
-        }
-    }
-    starts.sort_by_key(|(i, _)| *i);
+    let toc = chapter_level(toc);
 
-    let docs: Vec<Vec<Piece>> = opf
-        .spine
-        .iter()
-        .map(|p| read_entry(&mut zip, p).map(|x| parse_xhtml(&x)).unwrap_or_default())
-        .collect();
-
-    // Раскладываем документы по главам.
+    // Раскладываем документы spine по главам. Глава начинается либо с начала
+    // своего файла, либо с элемента-якоря внутри файла.
     let mut chapters: Vec<Chapter> = Vec::new();
-    let mut front: Vec<Block> = Vec::new(); // документы до первой главы
+    let mut front: Vec<Block> = Vec::new(); // текст до первой главы
     let mut subheading: Option<String> = None;
-    for (i, pieces) in docs.into_iter().enumerate() {
-        if let Some((_, title)) = starts.iter().find(|(j, _)| *j == i) {
-            chapters.push(Chapter { title: Some(title.clone()), blocks: Vec::new() });
-            subheading = None;
+    let mut used: Vec<(String, Option<String>)> = Vec::new();
+    let mut start_chapter = |title: &str, key: (String, Option<String>), chapters: &mut Vec<Chapter>, sub: &mut Option<String>| {
+        if !used.contains(&key) {
+            used.push(key);
+            chapters.push(Chapter { title: Some(title.to_string()), blocks: Vec::new() });
+            *sub = None;
+        }
+    };
+    for doc_path in &opf.spine {
+        let entries: Vec<&TocEntry> = toc.iter().filter(|e| e.file == *doc_path).collect();
+        let anchors: Vec<&str> = entries.iter().filter_map(|e| e.anchor.as_deref()).collect();
+        let pieces = read_entry(&mut zip, doc_path).map(|x| parse_xhtml(&x, &anchors)).unwrap_or_default();
+        let found: Vec<&str> = pieces.iter().filter_map(|p| if let Piece::Anchor(a) = p { Some(a.as_str()) } else { None }).collect();
+        // Пункты без якоря и с ненайденным якорем начинают главу с начала файла.
+        if let Some(e) = entries.iter().find(|e| e.anchor.as_deref().is_none_or(|a| !found.contains(&a))) {
+            start_chapter(&e.title, (e.file.clone(), e.anchor.clone()), &mut chapters, &mut subheading);
         }
         for piece in pieces {
             match piece {
+                Piece::Anchor(id) => {
+                    if let Some(e) = entries.iter().find(|e| e.anchor.as_deref() == Some(id.as_str())) {
+                        start_chapter(&e.title, (e.file.clone(), e.anchor.clone()), &mut chapters, &mut subheading);
+                    }
+                }
                 Piece::Heading(h) => subheading = Some(h),
                 Piece::Text(text) => {
                     let block = Block { text, page: None, subheading: subheading.clone() };

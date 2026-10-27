@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use zip::write::SimpleFileOptions;
 
-fn write_zip(path: &Path, files: &[(&str, String)]) {
+pub fn write_zip(path: &Path, files: &[(&str, String)]) {
     let f = std::fs::File::create(path).unwrap();
     let mut z = zip::ZipWriter::new(f);
     for (name, content) in files {
@@ -65,11 +65,13 @@ pub fn make_docx(dir: &Path, title: Option<&str>, paras: &[(&str, &str)]) -> Pat
 pub struct EpubDoc<'a> {
     pub toc_title: Option<&'a str>,
     pub body: &'a str,
+    /// Дополнительные пункты оглавления, указывающие на якоря внутри документа: (название, id).
+    pub anchors: &'a [(&'a str, &'a str)],
 }
 
 /// Создаёт EPUB 3 (nav.xhtml + toc.ncx) с главами (название, тело xhtml).
 pub fn make_epub(dir: &Path, title: &str, chapters: &[(&str, &str)]) -> PathBuf {
-    let docs: Vec<EpubDoc> = chapters.iter().map(|(t, b)| EpubDoc { toc_title: Some(t), body: b }).collect();
+    let docs: Vec<EpubDoc> = chapters.iter().map(|(t, b)| EpubDoc { toc_title: Some(t), body: b, anchors: &[] }).collect();
     make_epub_with(dir, title, &docs, true)
 }
 
@@ -95,8 +97,12 @@ pub fn make_epub_with(dir: &Path, title: &str, docs: &[EpubDoc], epub3: bool) ->
         manifest.push_str(&format!(r#"<item id="c{i}" href="{name}" media-type="application/xhtml+xml"/>"#));
         spine.push_str(&format!(r#"<itemref idref="c{i}"/>"#));
         if let Some(t) = d.toc_title {
-            nav_items.push_str(&format!(r#"<li><a href="{name}#start">{t}</a></li>"#));
+            nav_items.push_str(&format!(r#"<li><a href="{name}">{t}</a></li>"#));
             ncx_points.push_str(&format!(r#"<navPoint id="n{i}"><navLabel><text>{t}</text></navLabel><content src="{name}"/></navPoint>"#));
+        }
+        for (j, (t, id)) in d.anchors.iter().enumerate() {
+            nav_items.push_str(&format!(r#"<li><a href="{name}#{id}">{t}</a></li>"#));
+            ncx_points.push_str(&format!(r#"<navPoint id="n{i}a{j}"><navLabel><text>{t}</text></navLabel><content src="{name}#{id}"/></navPoint>"#));
         }
     }
     if epub3 {
