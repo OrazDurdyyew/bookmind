@@ -6,11 +6,13 @@ use crate::model::ExtractedBook;
 
 pub mod docx;
 pub mod epub;
+pub mod pdf;
 pub mod txt;
 mod xml;
 
 pub use docx::extract_docx;
 pub use epub::extract_epub;
+pub use pdf::extract_pdf;
 pub use txt::extract_txt;
 
 /// Ошибки при чтении файла книги.
@@ -37,6 +39,7 @@ pub fn extract_book(path: &Path) -> Result<ExtractedBook, ExtractError> {
         "txt" => extract_txt(path),
         "docx" => extract_docx(path),
         "epub" => extract_epub(path),
+        "pdf" => extract_pdf(path),
         other => Err(ExtractError::UnsupportedFormat(other.to_string())),
     }
 }
