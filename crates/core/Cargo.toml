@@ -10,14 +10,22 @@ fake = []
 [dependencies]
 anyhow = "1.0.104"
 encoding_rs = "0.8.42"
+futures-util = "0.3.34"
 pdfium-render = { version = "0.9.4", default-features = false, features = ["pdfium_latest", "thread_safe"] }
 quick-xml = "0.42.0"
 regex = "1.13.1"
+reqwest = { version = "0.13.5", default-features = false, features = ["json", "stream"] }
 rusqlite = { version = "0.41.0", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 thiserror = "2.0.21"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "process", "time", "io-util", "sync"] }
 zip = { version = "9.1.2", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 tempfile = "3.27.0"
+
+[dev-dependencies.bookmind-core]
+# Интеграционным тестам нужна FakeLlm.
+path = "."
+features = ["fake"]

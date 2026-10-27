@@ -2,8 +2,12 @@
 
 pub mod chunk;
 pub mod extract;
+#[cfg(any(test, feature = "fake"))]
+pub mod fake;
 pub mod lang;
+pub mod llm;
 pub mod model;
+pub mod server;
 pub mod store;
 
 pub use chunk::{chunk_book, ensure_chapters, DEFAULT_OVERLAP_WORDS, DEFAULT_TARGET_WORDS};
