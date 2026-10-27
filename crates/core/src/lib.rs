@@ -1,5 +1,6 @@
 //! bookmind-core — «мотор» BookMind: чтение книг, поиск, ответы и тесты.
 
+pub mod answer;
 pub mod chunk;
 pub mod extract;
 #[cfg(any(test, feature = "fake"))]
