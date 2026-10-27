@@ -11,6 +11,10 @@ use crate::store::Store;
 /// Сколько раз переспрашивать модель, если вопрос получился плохим.
 const RETRIES: u32 = 2;
 
+/// Фрагменты короче — это заголовки, строки оглавления, титульный лист:
+/// по ним нормальный вопрос не составить, поэтому источниками их не берём.
+const MIN_SOURCE_WORDS: usize = 40;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum QuestionKind {
     MultipleChoice,
@@ -121,6 +125,10 @@ pub fn validate(q: &QuizQuestion, earlier: &[QuizQuestion]) -> Result<(), &'stat
             if seen.len() != 4 {
                 return Err("варианты повторяются");
             }
+            // Маленькие модели иногда пишут в варианты другие вопросы.
+            if q.options.iter().any(|o| o.trim_end().ends_with('?')) {
+                return Err("вариант — это вопрос");
+            }
             if *i >= 4 {
                 return Err("номер правильного варианта вне диапазона");
             }
@@ -149,16 +157,19 @@ fn lang_name(lang: Lang) -> &'static str {
 }
 
 /// JSON-схема ответа модели для каждого типа вопроса.
+/// Для выбора из вариантов модель пишет правильный ответ текстом и три неправильных:
+/// номер правильного варианта маленькие модели путают, поэтому место выбираем сами.
 fn schema(kind: QuestionKind) -> Value {
     match kind {
         QuestionKind::MultipleChoice => json!({
             "type": "object",
             "properties": {
                 "question": {"type": "string"},
-                "options": {"type": "array", "items": {"type": "string"}, "minItems": 4, "maxItems": 4},
-                "correct_index": {"type": "integer", "minimum": 0, "maximum": 3}
+                "correct_answer": {"type": "string", "description": "the right answer, stated in the text"},
+                "wrong_answers": {"type": "array", "items": {"type": "string"}, "minItems": 3, "maxItems": 3,
+                    "description": "three plausible but wrong answers to the same question"}
             },
-            "required": ["question", "options", "correct_index"]
+            "required": ["question", "correct_answer", "wrong_answers"]
         }),
         QuestionKind::TrueFalse => json!({
             "type": "object",
@@ -173,13 +184,23 @@ fn schema(kind: QuestionKind) -> Value {
     }
 }
 
+/// Место правильного варианта среди `wrong + 1`: зависит от текста вопроса,
+/// поэтому повторяется от запуска к запуску, а по тесту распределяется примерно поровну.
+fn correct_position(question: &str, wrong: usize) -> usize {
+    let sum: usize = question.bytes().map(usize::from).sum();
+    sum % (wrong + 1)
+}
+
 /// Превращает JSON модели в вопрос; None, если полей не хватает.
 fn from_json(kind: QuestionKind, v: &Value) -> Option<(String, Vec<String>, CorrectAnswer)> {
     let question = v["question"].as_str()?.trim().to_string();
     match kind {
         QuestionKind::MultipleChoice => {
-            let options = v["options"].as_array()?.iter().map(|o| o.as_str().map(|s| s.trim().to_string())).collect::<Option<Vec<_>>>()?;
-            Some((question, options, CorrectAnswer::Option(v["correct_index"].as_u64()? as usize)))
+            let correct = v["correct_answer"].as_str()?.trim().to_string();
+            let mut options = v["wrong_answers"].as_array()?.iter().map(|o| o.as_str().map(|s| s.trim().to_string())).collect::<Option<Vec<_>>>()?;
+            let pos = correct_position(&question, options.len());
+            options.insert(pos, correct);
+            Some((question, options, CorrectAnswer::Option(pos)))
         }
         QuestionKind::TrueFalse => Some((question, Vec::new(), CorrectAnswer::Bool(v["answer"].as_bool()?))),
         QuestionKind::Open => Some((question, Vec::new(), CorrectAnswer::Text(v["answer"].as_str()?.trim().to_string()))),
@@ -209,7 +230,7 @@ pub async fn generate_one<L: Llm>(
         Difficulty::Hard => "hard",
     };
     let prompt = format!(
-        "Text:\n{}\n\nWrite one {difficulty_text} {kind_text} question in {} that can be answered using ONLY this text. The correct answer must be stated in the text.",
+        "Text:\n{}\n\nWrite one {difficulty_text} {kind_text} question in {} that can be answered using ONLY this text. The correct answer must be stated in the text. Answers are short statements, not questions.",
         chunk.text,
         lang_name(lang)
     );
@@ -232,6 +253,27 @@ pub async fn generate_one<L: Llm>(
     Ok(None)
 }
 
+/// Убирает из источников короткие фрагменты и опустевшие главы.
+/// Если короткие все (крошечная книга), оставляет всё как было.
+fn drop_short_sources(store: &Store, by_chapter: &[(u32, Vec<ChunkId>)]) -> anyhow::Result<Vec<(u32, Vec<ChunkId>)>> {
+    let mut out = Vec::new();
+    for (chapter, ids) in by_chapter {
+        let long: Vec<ChunkId> = store
+            .chunks(ids)?
+            .into_iter()
+            .filter(|c| c.text.split_whitespace().count() >= MIN_SOURCE_WORDS)
+            .map(|c| c.id)
+            .collect();
+        if !long.is_empty() {
+            out.push((*chapter, long));
+        }
+    }
+    if out.is_empty() {
+        return Ok(by_chapter.to_vec());
+    }
+    Ok(out)
+}
+
 /// Создаёт тест. `on_question(n, q)` вызывается после каждого готового вопроса
 /// (n — сколько уже готово). При отмене возвращает то, что успели создать.
 pub async fn generate_quiz<L: Llm>(
@@ -241,7 +283,8 @@ pub async fn generate_quiz<L: Llm>(
     cancel: &CancelToken,
     on_question: &mut (dyn FnMut(usize, &QuizQuestion) + Send),
 ) -> anyhow::Result<Vec<QuizQuestion>> {
-    let by_chapter = store.chunk_ids_by_chapter(req.book, req.chapters.as_deref())?;
+    let all = store.chunk_ids_by_chapter(req.book, req.chapters.as_deref())?;
+    let by_chapter = drop_short_sources(store, &all)?;
     let planned = plan_sources(&by_chapter, req.count);
     // Запасные источники — остальные фрагменты по порядку книги.
     let backups = by_chapter.iter().flat_map(|(_, ids)| ids.iter().copied()).filter(|id| !planned.contains(id));
@@ -302,6 +345,38 @@ mod tests {
         assert!(validate(&tf_good, &[]).is_ok());
         let open_empty = QuizQuestion { kind: QuestionKind::Open, options: vec![], correct: CorrectAnswer::Text(" ".into()), ..good };
         assert!(validate(&open_empty, &[]).is_err());
+        // Варианты-вопросы вместо ответов.
+        assert!(validate(&mc("Кто автор?", &["Кто автор?", "Где место?", "Какая тема?", "Сколько лет?"], 0), &[]).is_err());
+    }
+
+    #[test]
+    fn correct_position_is_stable_and_spread() {
+        assert_eq!(correct_position("Где идёт фотосинтез?", 3), correct_position("Где идёт фотосинтез?", 3));
+        let mut counts = [0; 4];
+        for i in 0..40 {
+            counts[correct_position(&format!("Вопрос номер {i}?"), 3)] += 1;
+        }
+        assert!(counts.iter().all(|&c| c >= 5), "{counts:?}");
+    }
+
+    #[tokio::test]
+    async fn generate_quiz_skips_short_sources() {
+        let store = Store::open_in_memory().unwrap();
+        let book = store.insert_book("b", "b.txt", Lang::Ru, None, &[None, None]).unwrap();
+        let long = "слово ".repeat(MIN_SOURCE_WORDS);
+        let drafts = vec![
+            ChunkDraft { chapter_index: 0, subheading: None, page_start: Some("1".into()), page_end: None, text: "ГЛАВА I. ОГЛАВЛЕНИЕ 5".into() },
+            ChunkDraft { chapter_index: 1, subheading: None, page_start: Some("2".into()), page_end: None, text: long },
+        ];
+        let embs: Vec<Vec<f32>> = drafts.iter().map(|d| FakeLlm::vector(&d.text)).collect();
+        store.insert_chunks(book, &drafts, &embs).unwrap();
+
+        let llm = FakeLlm::new();
+        llm.json_replies.lock().unwrap().push_back(json!({"question": "Что там?", "answer": "Слова"}));
+        let req = QuizRequest { book, chapters: None, kinds: vec![QuestionKind::Open], count: 1, difficulty: Difficulty::Easy, lang: Lang::Ru };
+        let qs = generate_quiz(&store, &llm, &req, &CancelToken::default(), &mut |_, _| {}).await.unwrap();
+        assert_eq!(qs.len(), 1);
+        assert_eq!(qs[0].chapter_index, 1);
     }
 
     #[tokio::test]
@@ -316,8 +391,8 @@ mod tests {
 
         let llm = FakeLlm::new();
         llm.json_replies.lock().unwrap().extend([
-            json!({"question": "Плохой?", "options": ["a", "b", "c"], "correct_index": 0}),
-            json!({"question": "Где идёт фотосинтез?", "options": ["В корнях", "В листьях", "В ядре", "В стебле"], "correct_index": 1}),
+            json!({"question": "Плохой?", "correct_answer": "a", "wrong_answers": ["b", "c"]}),
+            json!({"question": "Где идёт фотосинтез?", "correct_answer": "В листьях", "wrong_answers": ["В корнях", "В ядре", "В стебле"]}),
             json!({"question": "Растения дышат?", "answer": true}),
         ]);
         let req = QuizRequest {
@@ -328,7 +403,9 @@ mod tests {
         let qs = generate_quiz(&store, &llm, &req, &CancelToken::default(), &mut |n, _| seen.push(n)).await.unwrap();
         assert_eq!(qs.len(), 2);
         assert_eq!(qs[0].kind, QuestionKind::MultipleChoice);
-        assert_eq!(qs[0].correct, CorrectAnswer::Option(1));
+        let CorrectAnswer::Option(i) = qs[0].correct else { panic!("{:?}", qs[0].correct) };
+        assert_eq!(qs[0].options[i], "В листьях");
+        assert_eq!(qs[0].options.len(), 4);
         assert_eq!(qs[1].kind, QuestionKind::TrueFalse);
         assert_eq!(qs[1].correct, CorrectAnswer::Bool(true));
         assert_eq!(seen, vec![1, 2]);
