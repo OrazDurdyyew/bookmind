@@ -1,0 +1,6 @@
+target/
+models/
+tools/llama/
+tools/pdfium/
+eval/out/
+.superpowers/
