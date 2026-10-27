@@ -68,8 +68,8 @@ gpu_layers = 99
 
 [[embedders]]
 name = "e5-small"
-url = "https://huggingface.co/cstr/multilingual-e5-small-GGUF/resolve/main/multilingual-e5-small-q8_0.gguf"
-file = "multilingual-e5-small-q8_0.gguf"
+url = "https://huggingface.co/keisuke-miyako/multilingual-e5-small-gguf-q8_0/resolve/main/multilingual-e5-small-Q8_0.gguf"
+file = "multilingual-e5-small-Q8_0.gguf"
 pooling = "mean"
 query_prefix = "query: "
 passage_prefix = "passage: "
