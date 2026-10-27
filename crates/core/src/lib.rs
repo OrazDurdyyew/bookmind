@@ -4,6 +4,7 @@ pub mod chunk;
 pub mod extract;
 #[cfg(any(test, feature = "fake"))]
 pub mod fake;
+pub mod ingest;
 pub mod lang;
 pub mod llm;
 pub mod model;

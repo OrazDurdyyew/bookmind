@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::OnceLock;
+use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use anyhow::{anyhow, Context, Result};
 use regex::Regex;
@@ -47,9 +47,10 @@ pub struct BookRow {
     pub chapter_titles: Vec<Option<String>>,
 }
 
-/// Хранилище — один файл SQLite.
+/// Хранилище — один файл SQLite. Соединение под Mutex, чтобы Store
+/// можно было использовать из разных потоков (нужно для Tauri).
 pub struct Store {
-    conn: Connection,
+    conn: Mutex<Connection>,
 }
 
 const SCHEMA: &str = r#"
@@ -111,6 +112,10 @@ fn fts_query(query: &str) -> Option<String> {
 
 impl Store {
     /// Открывает (или создаёт) файл базы.
+    fn db(&self) -> MutexGuard<'_, Connection> {
+        self.conn.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     pub fn open(path: &Path) -> Result<Store> {
         let conn = Connection::open(path).with_context(|| format!("не удалось открыть {}", path.display()))?;
         Self::init(conn)
@@ -122,7 +127,7 @@ impl Store {
 
     fn init(conn: Connection) -> Result<Store> {
         conn.execute_batch(SCHEMA)?;
-        Ok(Store { conn })
+        Ok(Store { conn: Mutex::new(conn) })
     }
 
     pub fn insert_book(
@@ -133,11 +138,12 @@ impl Store {
         page_count: Option<u32>,
         chapter_titles: &[Option<String>],
     ) -> Result<BookId> {
-        self.conn.execute(
+        let db = self.db();
+        db.execute(
             "INSERT INTO books (title, file_name, lang, status, page_count, chapter_titles) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![title, file_name, lang.code(), BookStatus::Indexing.as_str(), page_count, serde_json::to_string(chapter_titles)?],
         )?;
-        Ok(self.conn.last_insert_rowid())
+        Ok(db.last_insert_rowid())
     }
 
     /// Сохраняет все фрагменты книги одной транзакцией.
@@ -145,7 +151,8 @@ impl Store {
         if chunks.len() != embeddings.len() {
             return Err(anyhow!("фрагментов {} , а эмбеддингов {}", chunks.len(), embeddings.len()));
         }
-        let tx = self.conn.unchecked_transaction()?;
+        let db = self.db();
+        let tx = db.unchecked_transaction()?;
         {
             let mut stmt = tx.prepare(
                 "INSERT INTO chunks (book_id, ord, chapter_index, subheading, page_start, page_end, text, embedding)
@@ -160,22 +167,24 @@ impl Store {
     }
 
     pub fn set_status(&self, book: BookId, status: BookStatus) -> Result<()> {
-        self.conn.execute("UPDATE books SET status = ?1 WHERE id = ?2", params![status.as_str(), book])?;
+        self.db().execute("UPDATE books SET status = ?1 WHERE id = ?2", params![status.as_str(), book])?;
         Ok(())
     }
 
     pub fn set_lang(&self, book: BookId, lang: Lang) -> Result<()> {
-        self.conn.execute("UPDATE books SET lang = ?1 WHERE id = ?2", params![lang.code(), book])?;
+        self.db().execute("UPDATE books SET lang = ?1 WHERE id = ?2", params![lang.code(), book])?;
         Ok(())
     }
 
     /// Удаляет книги, которые остались «изучаемыми» после сбоя,
     /// и возвращает имена их файлов, чтобы изучить их заново.
     pub fn remove_interrupted(&self) -> Result<Vec<String>> {
-        let mut stmt = self.conn.prepare("SELECT id, file_name FROM books WHERE status = ?1 ORDER BY id")?;
-        let rows: Vec<(BookId, String)> = stmt
-            .query_map([BookStatus::Indexing.as_str()], |r| Ok((r.get(0)?, r.get(1)?)))?
-            .collect::<rusqlite::Result<_>>()?;
+        let rows: Vec<(BookId, String)> = {
+            let db = self.db();
+            let mut stmt = db.prepare("SELECT id, file_name FROM books WHERE status = ?1 ORDER BY id")?;
+            let rows = stmt.query_map([BookStatus::Indexing.as_str()], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?;
+            rows
+        };
         for (id, _) in &rows {
             self.delete_book(*id)?;
         }
@@ -184,7 +193,7 @@ impl Store {
 
     /// Удаляет книгу; фрагменты и строки FTS удаляются каскадно.
     pub fn delete_book(&self, book: BookId) -> Result<()> {
-        self.conn.execute("DELETE FROM books WHERE id = ?1", [book])?;
+        self.db().execute("DELETE FROM books WHERE id = ?1", [book])?;
         Ok(())
     }
 
@@ -209,7 +218,7 @@ impl Store {
 
     pub fn book(&self, id: BookId) -> Result<BookRow> {
         let raw = self
-            .conn
+            .db()
             .query_row(&format!("SELECT {} FROM books WHERE id = ?1", Self::BOOK_COLUMNS), [id], Self::row_to_book)
             .optional()?
             .ok_or_else(|| anyhow!("книга {id} не найдена"))?;
@@ -217,7 +226,8 @@ impl Store {
     }
 
     pub fn books(&self) -> Result<Vec<BookRow>> {
-        let mut stmt = self.conn.prepare(&format!("SELECT {} FROM books ORDER BY id", Self::BOOK_COLUMNS))?;
+        let db = self.db();
+        let mut stmt = db.prepare(&format!("SELECT {} FROM books ORDER BY id", Self::BOOK_COLUMNS))?;
         let raws: Vec<_> = stmt.query_map([], Self::row_to_book)?.collect::<rusqlite::Result<_>>()?;
         raws.into_iter().map(Self::to_book_row).collect()
     }
@@ -225,7 +235,8 @@ impl Store {
     /// Полнотекстовый поиск по книге; лучшие совпадения первыми.
     pub fn fts_search(&self, book: BookId, query: &str, k: usize) -> Result<Vec<ChunkId>> {
         let Some(q) = fts_query(query) else { return Ok(Vec::new()) };
-        let mut stmt = self.conn.prepare(
+        let db = self.db();
+        let mut stmt = db.prepare(
             "SELECT c.id FROM chunks_fts JOIN chunks c ON c.id = chunks_fts.rowid
              WHERE chunks_fts MATCH ?1 AND c.book_id = ?2
              ORDER BY bm25(chunks_fts) LIMIT ?3",
@@ -235,7 +246,8 @@ impl Store {
     }
 
     pub fn vectors(&self, book: BookId) -> Result<Vec<(ChunkId, Vec<f32>)>> {
-        let mut stmt = self.conn.prepare("SELECT id, embedding FROM chunks WHERE book_id = ?1 ORDER BY ord")?;
+        let db = self.db();
+        let mut stmt = db.prepare("SELECT id, embedding FROM chunks WHERE book_id = ?1 ORDER BY ord")?;
         let rows = stmt
             .query_map([book], |r| Ok((r.get::<_, ChunkId>(0)?, blob_to_f32s(&r.get::<_, Vec<u8>>(1)?))))?
             .collect::<rusqlite::Result<_>>()?;
@@ -244,13 +256,13 @@ impl Store {
 
     /// Фрагменты по id — в том же порядке, что и `ids`.
     pub fn chunks(&self, ids: &[ChunkId]) -> Result<Vec<StoredChunk>> {
-        let mut stmt = self.conn.prepare(
+        let db = self.db();
+        let mut stmt = db.prepare(
             "SELECT id, book_id, ord, chapter_index, subheading, page_start, page_end, text FROM chunks WHERE id = ?1",
         )?;
-        let mut titles: HashMap<BookId, Vec<Option<String>>> = HashMap::new();
         let mut out = Vec::with_capacity(ids.len());
         for id in ids {
-            let mut c = stmt.query_row([id], |r| {
+            let c = stmt.query_row([id], |r| {
                 Ok(StoredChunk {
                     id: r.get(0)?,
                     book_id: r.get(1)?,
@@ -263,18 +275,25 @@ impl Store {
                     text: r.get(7)?,
                 })
             })?;
+            out.push(c);
+        }
+        drop(stmt);
+        drop(db);
+        // Названия глав берём из таблицы книг.
+        let mut titles: HashMap<BookId, Vec<Option<String>>> = HashMap::new();
+        for c in &mut out {
             if !titles.contains_key(&c.book_id) {
                 titles.insert(c.book_id, self.book(c.book_id)?.chapter_titles);
             }
             c.chapter_title = titles[&c.book_id].get(c.chapter_index as usize).cloned().flatten();
-            out.push(c);
         }
         Ok(out)
     }
 
     /// id фрагментов по главам, в порядке книги. `None` — все главы.
     pub fn chunk_ids_by_chapter(&self, book: BookId, chapters: Option<&[u32]>) -> Result<Vec<(u32, Vec<ChunkId>)>> {
-        let mut stmt = self.conn.prepare("SELECT chapter_index, id FROM chunks WHERE book_id = ?1 ORDER BY ord")?;
+        let db = self.db();
+        let mut stmt = db.prepare("SELECT chapter_index, id FROM chunks WHERE book_id = ?1 ORDER BY ord")?;
         let rows: Vec<(u32, ChunkId)> = stmt.query_map([book], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?;
         let mut out: Vec<(u32, Vec<ChunkId>)> = Vec::new();
         for (ch, id) in rows {
