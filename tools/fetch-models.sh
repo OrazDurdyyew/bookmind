@@ -4,7 +4,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p models
-python3 - "$@" <<'PY' | while read -r file url; do
+# В Windows python3 — заглушка Microsoft Store, поэтому сначала пробуем uv.
+py() { if command -v uv >/dev/null; then uv run --no-project python "$@"; else python3 "$@"; fi; }
+py - "$@" <<'PY' | tr -d '\r' | while read -r file url; do
 import sys, tomllib
 cfg = tomllib.load(open("eval/models.toml", "rb"))
 entries = cfg["candidates"] + cfg["embedders"] + [cfg["judge"]]

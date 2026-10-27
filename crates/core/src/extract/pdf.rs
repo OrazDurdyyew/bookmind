@@ -13,13 +13,14 @@ use crate::model::{Block, Chapter, ExtractedBook};
 const SCAN_CHARS_PER_PAGE: usize = 50;
 
 /// Где искать библиотеку pdfium: переменная BOOKMIND_PDFIUM_DIR,
-/// папка tools/pdfium/lib (разработка) или папка рядом с программой.
+/// папка tools/pdfium/lib или tools/pdfium/bin в Windows (разработка) или папка рядом с программой.
 fn pdfium_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     if let Ok(d) = std::env::var("BOOKMIND_PDFIUM_DIR") {
         dirs.push(PathBuf::from(d));
     }
-    dirs.push(PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../tools/pdfium/lib")));
+    let sub = if cfg!(windows) { "bin" } else { "lib" };
+    dirs.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tools/pdfium").join(sub));
     if let Some(exe_dir) = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)) {
         dirs.push(exe_dir);
     }

@@ -39,7 +39,7 @@ mod tests {
 pub fn llama_binary(root: &Path, gpu: bool) -> PathBuf {
     let name = format!("llama-server{}", std::env::consts::EXE_SUFFIX);
     if gpu {
-        for variant in ["ubuntu-cuda-12.8-x64", "ubuntu-vulkan-x64"] {
+        for variant in ["ubuntu-cuda-12.8-x64", "ubuntu-vulkan-x64", "win-cuda-12.4-x64", "win-vulkan-x64"] {
             let p = root.join("tools/llama").join(variant).join(&name);
             if p.is_file() {
                 return p;

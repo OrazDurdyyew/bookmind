@@ -123,7 +123,9 @@ mod tests {
 
     #[tokio::test]
     async fn spawn_fails_fast_when_model_is_missing() {
-        let binary = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tools/llama/llama-server");
+        let binary = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tools/llama")
+            .join(format!("llama-server{}", std::env::consts::EXE_SUFFIX));
         let cfg = ServerConfig {
             binary, model: "/nonexistent/model.gguf".into(), port: free_port(), ctx_size: 512, threads: Some(1), gpu_layers: 0, embedding: None,
         };
