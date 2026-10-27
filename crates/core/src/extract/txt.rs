@@ -8,7 +8,15 @@ use regex::Regex;
 use super::{file_stem, ExtractError};
 use crate::model::{Block, Chapter, ExtractedBook};
 
+/// Заголовок главы — короткая строка: не больше стольких слов.
+const MAX_HEADING_WORDS: usize = 8;
+
 /// Строка-заголовок главы: «Глава 1», «Chapter 2», «Bap 3» (без учёта регистра).
+/// Длинная строка, которая просто начинается со слова «Chapter», — не заголовок.
+fn is_heading(line: &str) -> bool {
+    line.split_whitespace().count() <= MAX_HEADING_WORDS && heading_re().is_match(line)
+}
+
 fn heading_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"(?i)^(глава|chapter|bap)\s+[\p{L}\p{N}]+.*$").unwrap())
@@ -38,7 +46,7 @@ pub fn extract_txt(path: &Path) -> Result<ExtractedBook, ExtractError> {
         let line = line.trim();
         if line.is_empty() {
             flush(&mut paragraph, &mut chapters);
-        } else if heading_re().is_match(line) {
+        } else if is_heading(line) {
             flush(&mut paragraph, &mut chapters);
             chapters.push(Chapter { title: Some(line.to_string()), blocks: Vec::new() });
         } else {
@@ -74,6 +82,16 @@ mod tests {
         assert_eq!(book.chapters[0].blocks[0].text, "Введение без заголовка.");
         assert_eq!(book.chapters[1].blocks.len(), 2);
         assert_eq!(book.title, "sample");
+    }
+
+    #[test]
+    fn long_sentence_starting_with_chapter_is_not_a_heading() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("b.txt");
+        std::fs::write(&path, "CHAPTER I.\nIntro text.\nChapter 3, investigation has taught us the principal constituents of\nplants.\n").unwrap();
+        let book = extract_txt(&path).unwrap();
+        assert_eq!(book.chapters.len(), 1);
+        assert!(book.chapters[0].blocks[0].text.contains("investigation"));
     }
 
     #[test]
