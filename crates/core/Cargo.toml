@@ -8,3 +8,6 @@ version.workspace = true
 fake = []
 
 [dependencies]
+anyhow = "1.0.104"
+serde = { version = "1.0.229", features = ["derive"] }
+thiserror = "2.0.21"
