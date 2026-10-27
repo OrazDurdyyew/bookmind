@@ -4,8 +4,11 @@ use std::path::Path;
 
 use crate::model::ExtractedBook;
 
+pub mod docx;
 pub mod txt;
+mod xml;
 
+pub use docx::extract_docx;
 pub use txt::extract_txt;
 
 /// Ошибки при чтении файла книги.
@@ -30,6 +33,7 @@ pub fn extract_book(path: &Path) -> Result<ExtractedBook, ExtractError> {
         .to_lowercase();
     match ext.as_str() {
         "txt" => extract_txt(path),
+        "docx" => extract_docx(path),
         other => Err(ExtractError::UnsupportedFormat(other.to_string())),
     }
 }
