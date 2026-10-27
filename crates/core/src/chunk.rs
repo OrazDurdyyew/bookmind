@@ -2,8 +2,10 @@
 
 use crate::model::{Block, Chapter, ChunkDraft, ExtractedBook};
 
-pub const DEFAULT_TARGET_WORDS: usize = 350;
-pub const DEFAULT_OVERLAP_WORDS: usize = 50;
+/// Размер фрагмента. Фрагмент целиком (до target + 20%) должен помещаться
+/// в модель эмбеддингов: см. llm::MAX_EMBED_WORDS.
+pub const DEFAULT_TARGET_WORDS: usize = 250;
+pub const DEFAULT_OVERLAP_WORDS: usize = 40;
 
 /// Книгу без глав длиннее этого числа слов делим на части.
 const SPLIT_IF_WORDS_OVER: usize = 8000;

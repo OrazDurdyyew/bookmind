@@ -85,6 +85,16 @@ pub fn parse_sse_line(line: &str) -> Option<SseEvent> {
     Some(SseEvent::Chunk { content, tokens_per_sec, completion_tokens })
 }
 
+/// Модели эмбеддингов (e5, bge) принимают не больше 512 токенов.
+/// 300 слов — с запасом; длиннее текст обрезаем, иначе сервер вернёт ошибку.
+pub const MAX_EMBED_WORDS: usize = 300;
+
+/// Текст для эмбеддинга: префикс модели + не больше MAX_EMBED_WORDS слов.
+pub fn embed_input(prefix: &str, text: &str) -> String {
+    let words: Vec<&str> = text.split_whitespace().take(MAX_EMBED_WORDS).collect();
+    format!("{prefix}{}", words.join(" "))
+}
+
 /// Префиксы для эмбеддингов: у e5 «query: »/«passage: », у bge-m3 пусто.
 #[derive(Clone, Debug, Default)]
 pub struct EmbedPrefixes {
@@ -128,7 +138,7 @@ impl Llm for LlamaHttp {
             EmbedKind::Query => &self.prefixes.query,
             EmbedKind::Passage => &self.prefixes.passage,
         };
-        let input: Vec<String> = texts.iter().map(|t| format!("{prefix}{t}")).collect();
+        let input: Vec<String> = texts.iter().map(|t| embed_input(prefix, t)).collect();
         let resp: serde_json::Value = self
             .http
             .post(format!("{}/v1/embeddings", self.embed_base))
@@ -238,6 +248,15 @@ mod tests {
         assert_eq!(parse_sse_line("data: [DONE]"), Some(SseEvent::Done));
         assert_eq!(parse_sse_line(": ping"), None);
         assert_eq!(parse_sse_line(""), None);
+    }
+
+    #[test]
+    fn embed_input_adds_prefix_and_caps_length() {
+        assert_eq!(embed_input("query: ", "где лист"), "query: где лист");
+        let long: String = (0..1000).map(|i| format!("w{i} ")).collect();
+        let out = embed_input("passage: ", &long);
+        assert_eq!(out.split_whitespace().count(), MAX_EMBED_WORDS + 1); // + слово префикса
+        assert!(out.starts_with("passage: w0 "));
     }
 
     #[test]
