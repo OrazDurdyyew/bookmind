@@ -52,8 +52,27 @@ pub fn apply_overrides(judged: &mut [Judged], csv_text: &str) -> anyhow::Result<
     Ok(())
 }
 
-fn ask(content: String) -> ChatRequest {
-    ChatRequest { messages: vec![Message { role: Role::User, content }], temperature: 0.0, max_tokens: 300 }
+/// Сколько раз спрашивать судью, если его JSON не разобрался.
+const JUDGE_ATTEMPTS: u32 = 3;
+
+/// Спрашивает судью. Длинное объяснение может оборваться на лимите токенов,
+/// тогда JSON не разбирается — переспрашиваем с чуть большей температурой,
+/// иначе модель ответила бы точно так же.
+async fn ask_judge<L: Llm>(llm: &L, content: String, schema: &serde_json::Value) -> anyhow::Result<serde_json::Value> {
+    let content = format!("{content}\nKeep the reason to one short sentence.");
+    let mut last_err = None;
+    for attempt in 0..JUDGE_ATTEMPTS {
+        let req = ChatRequest {
+            messages: vec![Message { role: Role::User, content: content.clone() }],
+            temperature: 0.3 * attempt as f32,
+            max_tokens: 1000,
+        };
+        match llm.chat_json(&req, schema).await {
+            Ok(v) => return Ok(v),
+            Err(e) => last_err = Some(e),
+        }
+    }
+    Err(last_err.unwrap())
 }
 
 /// Судья сравнивает ответ модели с эталоном.
@@ -63,7 +82,7 @@ async fn judge_answer<L: Llm>(llm: &L, a: &AnswerResult) -> anyhow::Result<(bool
         "Question: {}\nExpected answer: {}\nModel answer: {}\n\nIs the model answer factually consistent with the expected answer? Minor wording differences are fine; missing the key fact is incorrect.",
         a.question, a.expected.as_deref().unwrap_or(""), a.answer
     );
-    let v = llm.chat_json(&ask(prompt), &schema).await?;
+    let v = ask_judge(llm, prompt, &schema).await?;
     Ok((v["correct"].as_bool().unwrap_or(false), v["reason"].as_str().unwrap_or("").to_string()))
 }
 
@@ -83,7 +102,7 @@ async fn judge_quiz<L: Llm>(llm: &L, source: &str, q: &bookmind_core::quiz::Quiz
         "Source text:\n{source}\n\nQuiz question: {}\nOptions:\n{options}Marked correct answer: {answer}\n\nCheck: is the marked answer right according to the text? Is exactly one option correct? Can the question be answered from the text alone?",
         q.question
     );
-    let v = llm.chat_json(&ask(prompt), &schema).await?;
+    let v = ask_judge(llm, prompt, &schema).await?;
     let ok = ["correct_is_right", "exactly_one_correct", "answerable_from_text"].iter().all(|k| v[*k].as_bool().unwrap_or(false));
     Ok((ok, v["reason"].as_str().unwrap_or("").to_string()))
 }
@@ -99,15 +118,21 @@ pub async fn judge(dir: &Path) -> anyhow::Result<()> {
 
     let mut judged = Vec::with_capacity(records.len());
     for (i, r) in records.into_iter().enumerate() {
-        let (correct, reason) = match &r {
+        let verdict = match &r {
             Record::Answer(a) => match score_answer(a) {
-                Score::Correct => (true, "rule: correct refusal".into()),
-                Score::Incorrect => (false, if a.answerable { "rule: answer exists but model refused" } else { "rule: answered unanswerable question" }.into()),
-                Score::NeedsJudge => judge_answer(&llm, a).await?,
+                Score::Correct => Ok((true, "rule: correct refusal".into())),
+                Score::Incorrect => Ok((false, if a.answerable { "rule: answer exists but model refused" } else { "rule: answered unanswerable question" }.into())),
+                Score::NeedsJudge => judge_answer(&llm, a).await,
             },
-            Record::Quiz(q) => judge_quiz(&llm, &q.source_text, &q.question).await?,
-            Record::QuizBatch(_) => (true, String::new()),
+            Record::Quiz(q) => judge_quiz(&llm, &q.source_text, &q.question).await,
+            Record::QuizBatch(_) => Ok((true, String::new())),
         };
+        // Если судья так и не ответил, запись считается неверной и попадает в review.csv —
+        // её можно поправить вручную, а остальная оценка не теряется.
+        let (correct, reason) = verdict.unwrap_or_else(|e| {
+            eprintln!("  судья не ответил на {}: {e}", r.id());
+            (false, format!("judge error: {e}"))
+        });
         println!("  [{}] {} → {}", i + 1, r.id(), if correct { "ok" } else { "НЕТ" });
         judged.push(Judged { record: r, correct, reason });
     }
