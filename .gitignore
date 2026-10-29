@@ -6,3 +6,5 @@ eval/out/
 .superpowers/
 eval/out-*/
 eval/datasets/tm/books/
+train/books/
+train/out/
