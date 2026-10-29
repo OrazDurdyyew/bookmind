@@ -5,7 +5,7 @@ use std::sync::OnceLock;
 use regex::Regex;
 
 use crate::llm::{ChatRequest, ChatStats, Llm, Message, Role};
-use crate::model::{BookId, ChunkId, StoredChunk};
+use crate::model::{BookId, ChunkId, Lang, StoredChunk};
 use crate::retrieve::{retrieve, DEFAULT_TOP_K};
 use crate::store::Store;
 
@@ -23,6 +23,33 @@ Rules:
 - Answer in the same language as the question.
 - After each fact, cite its source number in square brackets, e.g. [2].
 - Be concise: 1-5 sentences.";
+
+/// Инструкция для туркменских книг — целиком на туркменском. С английской
+/// маленькие модели отвечали по-турецки, вставляли кириллицу и повторяли вопрос.
+const SYSTEM_PROMPT_TM: &str = "Sen kitap boýunça soraglara diňe berlen belgili çeşmelere esaslanyp jogap berýärsiň.
+Düzgünler:
+- Diňe çeşmelerde aýdylan maglumatlary ulan. Daşyndan bilim goşma.
+- Eger çeşmelerde jogap ýok bolsa, diňe şeýle ýaz: NOT_IN_BOOK
+- Jogaby türkmen dilinde, diňe türkmen latyn elipbiýinde ýaz. Kiril harplaryny we türk harplaryny (ı, İ, ğ) ulanma.
+- Soragy gaýtalama — göni jogap ber.
+- Her maglumatdan soň onuň çeşmesiniň belgisini inedördül ýaýda görkez, meselem [2].
+- Gysga jogap ber: 1–5 sözlem.";
+
+/// Слова в сообщении модели: инструкция, «Источники», «Вопрос», «Часть», «стр.».
+struct PromptWords {
+    system: &'static str,
+    sources: &'static str,
+    question: &'static str,
+    part: &'static str,
+    page: &'static str,
+}
+
+fn prompt_words(lang: Lang) -> PromptWords {
+    match lang {
+        Lang::Tm => PromptWords { system: SYSTEM_PROMPT_TM, sources: "Çeşmeler", question: "Sorag", part: "Bölüm", page: "sah." },
+        Lang::Ru | Lang::En => PromptWords { system: SYSTEM_PROMPT, sources: "Sources", question: "Question", part: "Part", page: "p." },
+    }
+}
 
 /// Прошлый ход разговора: вопрос и ответ.
 #[derive(Clone, Debug, PartialEq)]
@@ -52,33 +79,35 @@ pub struct Answer {
 }
 
 /// Подпись источника: «Глава 4, стр. 87» (или часть/раздел, если страниц нет).
-fn source_label(c: &StoredChunk) -> String {
+fn source_label(c: &StoredChunk, w: &PromptWords) -> String {
     let mut parts = Vec::new();
     match &c.chapter_title {
         Some(t) => parts.push(t.clone()),
-        None => parts.push(format!("Part {}", c.chapter_index + 1)),
+        None => parts.push(format!("{} {}", w.part, c.chapter_index + 1)),
     }
     if let Some(s) = &c.subheading {
         parts.push(s.clone());
     }
     if let Some(p) = &c.page_start {
-        parts.push(format!("p. {p}"));
+        parts.push(format!("{} {p}", w.page));
     }
     parts.join(", ")
 }
 
 /// Сообщения для модели: инструкция, последние ходы, источники и вопрос.
-pub fn build_answer_messages(question: &str, history: &[Turn], sources: &[StoredChunk]) -> Vec<Message> {
-    let mut msgs = vec![Message { role: Role::System, content: SYSTEM_PROMPT.to_string() }];
+/// `lang` — язык книги: для туркменской всё сообщение на туркменском.
+pub fn build_answer_messages(question: &str, history: &[Turn], sources: &[StoredChunk], lang: Lang) -> Vec<Message> {
+    let w = prompt_words(lang);
+    let mut msgs = vec![Message { role: Role::System, content: w.system.to_string() }];
     for t in history.iter().skip(history.len().saturating_sub(HISTORY_TURNS)) {
         msgs.push(Message { role: Role::User, content: t.question.clone() });
         msgs.push(Message { role: Role::Assistant, content: t.answer.clone() });
     }
-    let mut user = String::from("Sources:\n");
+    let mut user = format!("{}:\n", w.sources);
     for (i, c) in sources.iter().enumerate() {
-        user.push_str(&format!("[{}] ({})\n{}\n\n", i + 1, source_label(c), c.text));
+        user.push_str(&format!("[{}] ({})\n{}\n\n", i + 1, source_label(c, &w), c.text));
     }
-    user.push_str(&format!("Question: {question}"));
+    user.push_str(&format!("{}: {question}", w.question));
     msgs.push(Message { role: Role::User, content: user });
     msgs
 }
@@ -140,7 +169,8 @@ pub async fn answer<L: Llm>(
     if sources.is_empty() {
         return Ok(Answer { found: false, text: String::new(), citations: Vec::new(), stats: ChatStats::default() });
     }
-    let req = ChatRequest { messages: build_answer_messages(question, history, &sources), temperature: 0.2, max_tokens: 512 };
+    let lang = store.book(book)?.lang;
+    let req = ChatRequest { messages: build_answer_messages(question, history, &sources, lang), temperature: 0.2, max_tokens: 512 };
     let (raw, stats) = llm.chat_stream(&req, on_token).await?;
     let (found, text, citations) = parse_answer(&raw, &sources);
     Ok(Answer { found, text, citations, stats })
@@ -167,7 +197,7 @@ mod tests {
     #[test]
     fn messages_number_sources_and_limit_history() {
         let history: Vec<Turn> = (0..4).map(|i| Turn { question: format!("q{i}"), answer: format!("a{i}") }).collect();
-        let msgs = build_answer_messages("Где идёт фотосинтез?", &history, &three());
+        let msgs = build_answer_messages("Где идёт фотосинтез?", &history, &three(), Lang::Ru);
         assert_eq!(msgs[0].role, Role::System);
         assert!(msgs[0].content.contains(NOT_IN_BOOK));
         // system + 2 хода истории (по 2 сообщения) + вопрос
@@ -178,6 +208,18 @@ mod tests {
         assert!(last.contains("[1]") && last.contains("[3]") && !last.contains("[4]"));
         assert!(last.contains("Глава 4") && last.contains("87"));
         assert!(last.contains("Где идёт фотосинтез?"));
+        assert!(last.starts_with("Sources:") && last.contains("p. 87"));
+    }
+
+    #[test]
+    fn turkmen_book_gets_turkmen_prompt() {
+        let mut s = src(10, "7", "Kerim aş-Şazili 1979-njy ýylda doglupdyr.");
+        s.chapter_title = None;
+        let msgs = build_answer_messages("Ol haçan doglupdyr?", &[], &[s], Lang::Tm);
+        assert!(msgs[0].content.starts_with("Sen kitap boýunça") && msgs[0].content.contains(NOT_IN_BOOK));
+        let last = &msgs.last().unwrap().content;
+        assert!(last.starts_with("Çeşmeler:"), "{last}");
+        assert!(last.contains("(Bölüm 4, sah. 7)") && last.ends_with("Sorag: Ol haçan doglupdyr?"), "{last}");
     }
 
     #[test]
