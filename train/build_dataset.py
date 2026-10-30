@@ -30,6 +30,11 @@ UNANSWERABLE_SHARE = 0.2
 VAL_SHARE = 0.05
 SEED = 11
 
+# Книги, которых модель не увидит при обучении: по ним проверяем, научилась ли она
+# навыку, а не запомнила обучающие книги. Их вопросы идут в holdout_qa.jsonl.
+# (Не в EXCLUDE у select_chunks.py: перевыбор фрагментов сменил бы их id.)
+HOLDOUT = ["Annamanow M~Astronomiýa", "Türkmen halk döredijiligi II"]
+
 FOREIGN = re.compile("[Ѐ-ӿıİğĞñÑÿŸ]")
 WORD = re.compile(r"[^\W\d_]+")
 
@@ -126,6 +131,12 @@ def main() -> None:
 
     rng = random.Random(SEED)
     rng.shuffle(qa)
+    held = [(r, c) for r, c in qa if any(h in c["book"] for h in HOLDOUT)]
+    qa = [(r, c) for r, c in qa if not any(h in c["book"] for h in HOLDOUT)]
+    with (OUT / "holdout_qa.jsonl").open("w", encoding="utf-8", newline="\n") as f:
+        for r, c in held:
+            f.write(json.dumps({**r, "book": c["book"], "page_start": c["page_start"]}, ensure_ascii=False) + "\n")
+    print(f"отложено для проверки: {len(held)} вопросов из {len(HOLDOUT)} книг")
     system = system_prompt_tm()
     examples = []
     for r, c in qa:
