@@ -35,6 +35,11 @@ SEED = 11
 # (Не в EXCLUDE у select_chunks.py: перевыбор фрагментов сменил бы их id.)
 HOLDOUT = ["Annamanow M~Astronomiýa", "Türkmen halk döredijiligi II"]
 
+# Правки по ручной проверке 100 примеров (train/out/duzedilen.xlsx, 2026-10-30).
+# Убраны: неясный вопрос, разные числа в источниках, примеры, отмеченные проверяющим как ошибочные.
+DROP = {"tm-0420", "tm-0671", "tm-0197", "tm-0740", "tm-1005", "tm-0109", "tm-0073"}
+REPLACE = {"tm-0856": [("roboty", "mehanizmi"), ("robot", "mehanizm")]}  # «robot» → «mehanizm»
+
 FOREIGN = re.compile("[Ѐ-ӿıİğĞñÑÿŸ]")
 WORD = re.compile(r"[^\W\d_]+")
 
@@ -115,6 +120,12 @@ def main() -> None:
             if "skip" in r:
                 problems["пропущен"] += 1
                 continue
+            if r.get("id") in DROP:
+                problems["убран при проверке"] += 1
+                continue
+            for old, new in REPLACE.get(r.get("id"), []):
+                r["question"] = r["question"].replace(old, new)
+                r["answer"] = r["answer"].replace(old, new)
             c = selected.get(r.get("id"))
             if not c or not r.get("question") or not r.get("answer") or not r.get("quote"):
                 problems["нет полей или id"] += 1
