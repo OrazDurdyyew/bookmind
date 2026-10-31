@@ -97,3 +97,13 @@ file = "Qwen3-8B-Q4_K_M.gguf"
 tier_hint = "judge"
 ctx_size = 8192
 gpu_layers = 99
+
+# Qwen3-4B, дообученная на туркменских примерах (train/kaggle_finetune.ipynb, 2026-10-31).
+# Файла нет в интернете: его кладут в models/ вручную после обучения на Kaggle.
+[[candidates]]
+name = "bookmind-tm"
+url = "local"
+file = "bookmind-tm-Q4_K_M.gguf"
+tier_hint = "standard"
+ctx_size = 8192
+gpu_layers = 0
