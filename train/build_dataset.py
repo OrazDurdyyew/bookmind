@@ -26,7 +26,12 @@ from select_chunks import clean  # noqa: E402
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "train/out"
 TOP_K = 6
-UNANSWERABLE_SHARE = 0.2
+# Первое обучение с долей 0.2 научило модель отказываться слишком часто
+# (eval 2026-10-31: отказ на 21 из 65 вопросов с ответом), поэтому 0.1.
+UNANSWERABLE_SHARE = 0.1
+# Доля вопросов с ответом, где среди источников есть соседний фрагмент — как в настоящем
+# поиске, где отрывки перекрываются и часто идут подряд.
+NEIGHBOUR_SHARE = 0.5
 VAL_SHARE = 0.05
 SEED = 11
 
@@ -108,6 +113,7 @@ def main() -> None:
         c["text"] = clean(c["text"])
         by_book[c["book"]].append(c)
     index = {b: Bm25(docs) for b, docs in by_book.items() if b in {c["book"] for c in selected.values()}}
+    by_ord = {(c["book"], c["ord"]): c for docs in by_book.values() for c in docs}
 
     qa, problems = [], Counter()
     for path in sorted((OUT / "qa").glob("batch-*.jsonl")):
@@ -162,6 +168,9 @@ def main() -> None:
             sources, reply = others[:TOP_K], "NOT_IN_BOOK"
         else:
             sources = others[: TOP_K - 1]
+            near = [by_ord[(c["book"], o)] for o in (c["ord"] - 1, c["ord"] + 1) if (c["book"], o) in by_ord]
+            if near and rng.random() < NEIGHBOUR_SHARE:
+                sources[rng.randrange(len(sources))] = rng.choice(near)
             pos = rng.randrange(len(sources) + 1)
             sources.insert(pos, c)
             reply = f"{r['answer'].strip()} [{pos + 1}]"
