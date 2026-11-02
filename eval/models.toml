@@ -107,3 +107,12 @@ file = "bookmind-tm-Q4_K_M.gguf"
 tier_hint = "standard"
 ctx_size = 8192
 gpu_layers = 0
+
+# Второе обучение (2026-11-02): 10% «нет в книге», соседние фрагменты среди источников, 1 эпоха.
+[[candidates]]
+name = "bookmind-tm2"
+url = "local"
+file = "bookmind-tm2-Q4_K_M.gguf"
+tier_hint = "standard"
+ctx_size = 8192
+gpu_layers = 0

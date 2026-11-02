@@ -16,6 +16,8 @@ use crate::run::spawn_chat;
 pub enum Score {
     Correct,
     Incorrect,
+    /// Модель сослалась на источник, но текста ответа нет — судья (qwen3-8b) такое засчитывал.
+    Empty,
     NeedsJudge,
 }
 
@@ -26,6 +28,7 @@ pub fn score_answer(r: &AnswerResult) -> Score {
         (false, false) => Score::Correct,
         (false, true) => Score::Incorrect,
         (true, false) => Score::Incorrect,
+        (true, true) if r.answer.trim().is_empty() => Score::Empty,
         (true, true) => Score::NeedsJudge,
     }
 }
@@ -122,6 +125,7 @@ pub async fn judge(dir: &Path) -> anyhow::Result<()> {
             Record::Answer(a) => match score_answer(a) {
                 Score::Correct => Ok((true, "rule: correct refusal".into())),
                 Score::Incorrect => Ok((false, if a.answerable { "rule: answer exists but model refused" } else { "rule: answered unanswerable question" }.into())),
+                Score::Empty => Ok((false, "rule: empty answer".into())),
                 Score::NeedsJudge => judge_answer(&llm, a).await,
             },
             Record::Quiz(q) => judge_quiz(&llm, &q.source_text, &q.question).await,
@@ -183,6 +187,8 @@ pub(crate) mod tests {
         assert_eq!(score_answer(&ans("2", false, true)), Score::Incorrect);
         assert_eq!(score_answer(&ans("3", true, false)), Score::Incorrect);
         assert_eq!(score_answer(&ans("4", true, true)), Score::NeedsJudge);
+        let empty = AnswerResult { answer: " ".into(), ..ans("5", true, true) };
+        assert_eq!(score_answer(&empty), Score::Empty);
     }
 
     #[test]
