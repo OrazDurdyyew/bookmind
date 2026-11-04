@@ -26,7 +26,7 @@
 
 ### 2. Скрипт настройки
 
-1. Скачайте проект архивом: https://github.com/OrazDurdyyew/bookmind/archive/refs/heads/feat/core-eval.zip и распакуйте. Нужна только папка `train\remote` внутри.
+1. Скачайте проект архивом: https://github.com/OrazDurdyyew/bookmind/archive/refs/heads/main.zip и распакуйте. Нужна только папка `train\remote` внутри.
 2. Откройте PowerShell **от имени администратора**, перейдите в папку `train\remote` и выполните:
 
    ```
