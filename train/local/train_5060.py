@@ -5,7 +5,7 @@
 модели; логиты считаем лишь на позициях ответа — иначе на 7000 токенов они одни заняли бы ~9 ГБ.
 
 Папка рядом со скриптом: python/ (Python с библиотеками), base/ (Qwen/Qwen3-4B),
-data/train.jsonl и data/val.jsonl. Результат — out/lora. Каждые 25 шагов сохраняется
+data/train.jsonl и data/val.jsonl. Результат — out/lora. Каждые 10 шагов сохраняется
 out/checkpoint: если компьютер выключится, повторный запуск продолжит с него.
 
     python\\python.exe train_5060.py
@@ -16,6 +16,7 @@ import json
 import math
 import os
 import random
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -26,6 +27,7 @@ from transformers import AttentionInterface, AutoModelForCausalLM, AutoTokenizer
 
 HERE = Path(__file__).resolve().parent
 LOG = None
+SAVE_EVERY = 10  # шагов; один шаг на 5060 Ti — 2–3 минуты, сохранение — секунды
 
 
 def attention(module, q, k, v, attention_mask, scaling=None, dropout=0.0, **kwargs):
@@ -88,6 +90,17 @@ def loss_on(model, ids, labels):
     return torch.nn.functional.cross_entropy(logits, y[keep])
 
 
+def save_checkpoint(out, model, opt, sched, step):
+    new, cur, old = out / "checkpoint.new", out / "checkpoint", out / "checkpoint.old"
+    model.save_pretrained(new)
+    torch.save({"opt": opt.state_dict(), "sched": sched.state_dict(), "step": step}, new / "state.pt")
+    if cur.exists():
+        shutil.rmtree(old, ignore_errors=True)
+        cur.rename(old)
+    new.rename(cur)
+    shutil.rmtree(old, ignore_errors=True)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", default=str(HERE / "base"))
@@ -119,7 +132,10 @@ def main():
     model.config.use_cache = False
     model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
     model.enable_input_require_grads()
-    ckpt = out / "checkpoint"
+    # Свежая точка пишется в checkpoint.new и только целиком подменяет checkpoint (старая на
+    # время подмены — checkpoint.old), так что выключение в любой момент оставляет целую копию.
+    shutil.rmtree(out / "checkpoint.new", ignore_errors=True)
+    ckpt = next((d for d in (out / "checkpoint", out / "checkpoint.old") if (d / "state.pt").exists()), out / "checkpoint")
     if (ckpt / "adapter_config.json").exists():
         model = PeftModel.from_pretrained(model, ckpt, is_trainable=True)
     else:
@@ -163,9 +179,8 @@ def main():
             log(f"шаг {step}/{total}, ошибка {sum(losses) / len(losses):.3f}, прошло {(time.time() - t0) / 3600:.1f} ч, "
                 f"осталось ~{per * (total - step) / 3600:.1f} ч, память {torch.cuda.max_memory_allocated() / 2**30:.1f} ГБ")
             losses = []
-        if step % 25 == 0 and step < total:
-            model.save_pretrained(ckpt)
-            torch.save({"opt": opt.state_dict(), "sched": sched.state_dict(), "step": step}, ckpt / "state.pt")
+        if step % SAVE_EVERY == 0 and step < total:
+            save_checkpoint(out, model, opt, sched, step)
 
     model.save_pretrained(out / "lora")
     tok.save_pretrained(out / "lora")
