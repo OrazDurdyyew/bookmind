@@ -3,6 +3,7 @@ rem Докачка файлов, обучение и сборка модели. 
 chcp 65001 >nul
 cd /d "%~dp0"
 set PYTHONUTF8=1
+call "%~dp0get-python.bat" || goto fail
 python\python.exe fetch.py || goto fail
 set HF_HUB_OFFLINE=1
 set TRANSFORMERS_OFFLINE=1

@@ -1,19 +1,22 @@
-"""Докачивает тяжёлые файлы (torch ~2.8 ГБ, Qwen3-4B ~8 ГБ) и ставит библиотеки — на компьютере для обучения.
+"""Докачивает тяжёлые файлы (torch ~2.8 ГБ, Qwen3-4B ~8 ГБ, llama.cpp) и ставит библиотеки — на компьютере для обучения.
 
 Только стандартная библиотека Python. Список файлов с размерами и SHA-256 — manifest.json
-(его пишет make_package.py). Каждый файл качается в <имя>.part с продолжением после обрыва
+(его пишет make_manifest.py). Каждый файл качается в <имя>.part с продолжением после обрыва
 (HTTP Range); если источник недоступен — пробуется следующий (huggingface.co → hf-mirror.com →
-modelscope.cn, pytorch.org → зеркало Alibaba). Готовый файл сверяется по SHA-256.
-Мелкие библиотеки уже лежат в wheels/ и ставятся без интернета.
+modelscope.cn, pytorch.org → зеркало Alibaba). Готовый файл сверяется по SHA-256, архив с
+полем "unpack" распаковывается в эту папку и удаляется. Мелкие библиотеки ставятся с PyPI
+по requirements.txt (версии и SHA-256 закреплены).
 
     python\\python.exe fetch.py
 """
 import hashlib
 import json
+import shutil
 import subprocess
 import sys
 import time
 import urllib.request
+import zipfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -51,8 +54,11 @@ def fetch_once(url, part, size):
 
 def fetch(item):
     dest = HERE / item["path"]
-    if dest.exists() and dest.stat().st_size == item["size"]:
+    unpacked = HERE / item.get("unpack", "") / ".unpacked"
+    if item.get("unpack") and unpacked.exists() and unpacked.read_text() == item["sha256"]:
         return
+    if dest.exists() and dest.stat().st_size == item["size"]:
+        return unpack(item, dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
     part = dest.with_name(dest.name + ".part")
     print(f"качаю {item['path']} ({item['size'] / 1e9:.2f} ГБ)", flush=True)
@@ -79,6 +85,18 @@ def fetch(item):
         part.unlink()
         sys.exit(f"{item['path']} скачался с ошибкой и удалён — запустите ещё раз")
     part.replace(dest)
+    unpack(item, dest)
+
+
+def unpack(item, archive):
+    if not item.get("unpack"):
+        return
+    to = HERE / item["unpack"]
+    shutil.rmtree(to, ignore_errors=True)
+    with zipfile.ZipFile(archive) as z:
+        z.extractall(to)
+    (to / ".unpacked").write_text(item["sha256"])
+    archive.unlink()
 
 
 def main():
@@ -91,9 +109,11 @@ def main():
     print("ставлю библиотеки…", flush=True)
     py = [sys.executable, "-m"]
     subprocess.run(py + ["ensurepip"], check=True, capture_output=True)
-    wheels = sorted(str(p) for p in (HERE / "wheels").glob("*.whl"))
-    subprocess.run(py + ["pip", "install", "--no-index", "--no-deps", "--disable-pip-version-check", "--break-system-packages", "--no-warn-script-location",
-                         "-q", *wheels, str(HERE / manifest["torch"])], check=True)
+    pip = py + ["pip", "install", "--no-deps", "--disable-pip-version-check", "--break-system-packages",
+                "--no-warn-script-location", "-q"]
+    subprocess.run(pip + ["--only-binary", ":all:", "--require-hashes", "--retries", "10", "--timeout", "60",
+                          "-r", str(HERE / "requirements.txt")], check=True)
+    subprocess.run(pip + ["--no-index", str(HERE / manifest["torch"])], check=True)
     done.write_text("ok")
     print("всё скачано и установлено", flush=True)
 

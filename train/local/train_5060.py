@@ -4,8 +4,8 @@
 (4 ГБ параметров × 2 байта = 8 ГБ — на 16 ГБ влезает без 4-битного сжатия). Учим только ответу
 модели; логиты считаем лишь на позициях ответа — иначе на 7000 токенов они одни заняли бы ~9 ГБ.
 
-Папка рядом со скриптом: python/ (Python с библиотеками), base/ (Qwen/Qwen3-4B),
-data/train.jsonl и data/val.jsonl. Результат — out/lora. Каждые 10 шагов сохраняется
+Рядом со скриптом: python/ (Python с библиотеками), base/ (Qwen/Qwen3-4B) — их ставит fetch.py;
+примеры — ../out/train.jsonl и ../out/val.jsonl (из build_dataset.py). Результат — out/lora. Каждые 10 шагов сохраняется
 out/checkpoint: если компьютер выключится, повторный запуск продолжит с него.
 
     python\\python.exe train_5060.py
@@ -104,7 +104,7 @@ def save_checkpoint(out, model, opt, sched, step):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", default=str(HERE / "base"))
-    ap.add_argument("--data", default=str(HERE / "data"))
+    ap.add_argument("--data", default=str(HERE.parent / "out"))
     ap.add_argument("--out", default=str(HERE / "out"))
     ap.add_argument("--max-len", type=int, default=7168)
     ap.add_argument("--epochs", type=int, default=1)

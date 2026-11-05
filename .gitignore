@@ -7,4 +7,15 @@ eval/out/
 eval/out-*/
 eval/datasets/tm/books/
 train/books/
-train/out/
+train/out/*
+!train/out/train.jsonl
+!train/out/val.jsonl
+train/local/python/
+train/local/dl/
+train/local/base/
+train/local/llama/
+train/local/out/
+train/local/out-check/
+train/local/*.part
+train/local/python.tar.gz
+__pycache__/
