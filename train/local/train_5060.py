@@ -120,7 +120,16 @@ def main():
     t0 = time.time()
 
     assert torch.cuda.is_available(), "PyTorch не видит видеокарту: обновите драйвер NVIDIA (нужен 572 или новее)"
-    log("видеокарта:", torch.cuda.get_device_name(0), f"{torch.cuda.get_device_properties(0).total_memory / 2**30:.1f} ГБ")
+    # В компьютере может стоять ещё и маленькая карта для мониторов — берём ту, где больше памяти.
+    gpus = [torch.cuda.get_device_properties(i) for i in range(torch.cuda.device_count())]
+    for i, p in enumerate(gpus):
+        log(f"видеокарта {i}: {p.name}, {p.total_memory / 2**30:.1f} ГБ, архитектура sm_{p.major}{p.minor}")
+    best = max(range(len(gpus)), key=lambda i: gpus[i].total_memory)
+    if gpus[best].total_memory < 15 * 2**30:
+        sys.exit("нет видеокарты с 16 ГБ памяти: если RTX 5060 Ti стоит, но её нет в списке выше — "
+                 "обновите драйвер NVIDIA (нужен 572 или новее)")
+    torch.cuda.set_device(best)
+    log("обучаю на:", gpus[best].name)
     torch.ones(8, 8, device="cuda", dtype=torch.bfloat16) @ torch.ones(8, 8, device="cuda", dtype=torch.bfloat16)
 
     tok = AutoTokenizer.from_pretrained(args.base)
